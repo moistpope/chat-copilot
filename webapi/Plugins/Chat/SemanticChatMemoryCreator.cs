@@ -1,26 +1,24 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
 using System;
-using System.Globalization;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using CopilotChat.WebApi.Extensions;
 using CopilotChat.WebApi.Models.Request;
 using CopilotChat.WebApi.Options;
-using CopilotChat.WebApi.Plugins.Utils;
 using Microsoft.Extensions.Logging;
 using Microsoft.KernelMemory;
-using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Connectors.AI.OpenAI;
-using Microsoft.SemanticKernel.Orchestration;
 
 namespace CopilotChat.WebApi.Plugins.Chat;
 
 /// <summary>
 /// Helper class to extract and create kernel memory from chat history.
 /// </summary>
-internal static class SemanticChatMemoryExtractor
+public static class SemanticChatMemoryCreator
 {
+
     /// <summary>
     /// Extract and save kernel memory.
     /// </summary>
@@ -30,14 +28,13 @@ internal static class SemanticChatMemoryExtractor
     /// <param name="options">The prompts options.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    public static async Task ExtractSemanticChatMemoryAsync(
+    public static async Task CreateSemanticChatMemories(
         string chatId,
+        List<string> semanticMemories,
         IKernelMemory memoryClient,
-        IKernel kernel,
-        SKContext context,
         PromptsOptions options,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         foreach (string memoryType in Enum.GetNames(typeof(SemanticMemoryType)))
         {
@@ -48,10 +45,12 @@ internal static class SemanticChatMemoryExtractor
                     logger.LogInformation("Unable to extract kernel memory for invalid memory type {0}. Continuing...", memoryType);
                     continue;
                 }
-                var semanticMemory = await ExtractCognitiveMemoryAsync(memoryType, memoryName, logger);
-                foreach (var item in semanticMemory.Items)
+
+                foreach (var item in semanticMemories)
                 {
-                    await CreateMemoryAsync(memoryName, item.ToFormattedString());
+                    var formattedMemory = item;
+
+                    await CreateMemoryAsync(memoryName, formattedMemory); // TODO: Check each but batch create
                 }
             }
             catch (Exception ex) when (!ex.IsCriticalException())
@@ -61,59 +60,6 @@ internal static class SemanticChatMemoryExtractor
                 logger.LogInformation("Unable to extract kernel memory for {0}: {1}. Continuing...", memoryType, ex.Message);
                 continue;
             }
-        }
-
-        /// <summary>
-        /// Extracts the semantic chat memory from the chat session.
-        /// </summary>
-        async Task<SemanticChatMemory> ExtractCognitiveMemoryAsync(string memoryType, string memoryName, ILogger logger)
-        {
-            if (!options.MemoryMap.TryGetValue(memoryName, out var memoryPrompt))
-            {
-                throw new ArgumentException($"Memory name {memoryName} is not supported.");
-            }
-
-            // Token limit for chat history
-            var tokenLimit = options.CompletionTokenLimit;
-            var remainingToken =
-                tokenLimit -
-                options.ResponseTokenLimit -
-                TokenUtils.TokenCount(memoryPrompt);
-
-            var memoryExtractionContext = context.Clone();
-            memoryExtractionContext.Variables.Set("tokenLimit", remainingToken.ToString(new NumberFormatInfo()));
-            memoryExtractionContext.Variables.Set("memoryName", memoryName);
-            memoryExtractionContext.Variables.Set("format", options.MemoryFormat);
-            memoryExtractionContext.Variables.Set("knowledgeCutoff", options.KnowledgeCutoffDate);
-
-            var memoryExtractionOptions = options.ToCompletionSettings();
-            memoryExtractionOptions.ExtensionData.Add("response_format", new { type = "json_object" });
-
-            var completionFunction = kernel.CreateSemanticFunction(memoryPrompt);
-            // instantiate an AIRequestSettings object to set response_format={"type": "json_object"}
-            var result = await completionFunction.InvokeAsync(
-                memoryExtractionContext,
-                memoryExtractionOptions,
-                cancellationToken
-                );
-
-            // remove the first 8 characters and last four characters from the result. gpt-4-turbo is always returning {```json at the beginning and ```} at the end.
-
-            // var cleanedResult = result.ToString().Substring(8);
-            // cleanedResult = cleanedResult.Substring(0, cleanedResult.Length - 4);
-            var cleanedResult = result.ToString();
-
-
-            // Get token usage from ChatCompletion result and add to context
-            // Since there are multiple memory types, total token usage is calculated by cumulating the token usage of each memory type.
-            TokenUtils.GetFunctionTokenUsage(result, context, logger, $"SystemCognitive_{memoryType}");
-
-            SemanticChatMemory memory = SemanticChatMemory.FromJson(cleanedResult);
-
-            // log the memory extraction result
-            logger.LogInformation("Extracted {0} memory items for {1}", memory.Items.Count, memoryName);
-
-            return memory;
         }
 
         /// <summary>

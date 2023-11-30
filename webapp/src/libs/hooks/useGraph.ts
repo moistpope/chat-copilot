@@ -2,12 +2,14 @@ import { useMsal } from '@azure/msal-react';
 import { Constants } from '../../Constants';
 import { useAppDispatch, useAppSelector } from '../../redux/app/hooks';
 import { RootState } from '../../redux/app/store';
+import { GraphUserData } from '../../redux/features/app/AppState';
 import { addAlert } from '../../redux/features/app/appSlice';
 import { UserData } from '../../redux/features/users/UsersState';
 import { setUsers } from '../../redux/features/users/usersSlice';
 import { AuthHelper } from '../auth/AuthHelper';
 import { TokenHelper } from '../auth/TokenHelper';
 import { AlertType } from '../models/AlertType';
+import { IGraphUserGroupResponse } from '../models/GraphUserData';
 import { BatchRequest, BatchResponse, GraphService } from '../services/GraphService';
 
 export const useGraph = () => {
@@ -133,6 +135,28 @@ export const useGraph = () => {
         };
     };
 
+    const createGetCurrentUserRequest = (index: number): BatchRequest => {
+        return {
+            id: index.toString(),
+            method: 'GET',
+            url: `/me`,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        };
+    };
+
+    const createGetCurrentUserGroupsRequest = (index: number): BatchRequest => {
+        return {
+            id: index.toString(),
+            method: 'GET',
+            url: `/me/memberOf`,
+            headers: {
+                'Content-Type': 'application/json',
+            },
+        };
+    };
+
     // Helper function to extract the user data from a batch response
     const parseGetUserResponse = (
         response: BatchResponse,
@@ -159,7 +183,63 @@ export const useGraph = () => {
         return null;
     };
 
+    const getCurrentUserGraphData = async () => {
+        if (!AuthHelper.isAuthAAD()) {
+            return;
+        }
+
+        const getCurrentUserScope = 'User.Read';
+        const token = await TokenHelper.getAccessTokenUsingMsal(inProgress, instance, [getCurrentUserScope]);
+
+        const request = createGetCurrentUserRequest(0);
+        const response: BatchResponse[] = await graphService.makeBatchRequest([request], token);
+
+        if (response[0].status === 200 && response[0].body) {
+            const userGraphData = response[0].body as GraphUserData;
+
+            dispatch(setUsers({ [userGraphData.id]: userGraphData }));
+
+            return userGraphData;
+        } else {
+            return null;
+        }
+    };
+
+    const getCurrentUserGroups = async () => {
+        if (!AuthHelper.isAuthAAD()) {
+            return;
+        }
+
+        const getCurrentUserScope = 'User.Read';
+        const token = await TokenHelper.getAccessTokenUsingMsal(inProgress, instance, [getCurrentUserScope]);
+
+        const request = createGetCurrentUserGroupsRequest(0);
+        const response: BatchResponse[] = await graphService.makeBatchRequest([request], token);
+
+        if (response[0].status === 200 && response[0].body) {
+            const userGroups = response[0].body as IGraphUserGroupResponse;
+
+            // dispatch(setUsers({ [userGraphData.id]: userGraphData }));
+
+            return userGroups.value;
+        } else {
+            return null;
+        }
+    };
+
+    const userData = async () => {
+        const resultAwait = await Promise.all([await getCurrentUserGraphData(), await getCurrentUserGroups()]);
+        const result = {
+            userGraphData: resultAwait[0],
+            userGroups: resultAwait[1],
+        };
+        return result;
+    };
+
     return {
         loadUsers,
+        getCurrentUserGraphData,
+        getCurrentUserGroups,
+        userData,
     };
 };

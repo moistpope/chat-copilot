@@ -26,6 +26,33 @@ export interface ActiveUserInfo {
     id: string;
     email: string;
     username: string;
+    graphUserData?: GraphUserData;
+    graphUserGroups?: GraphUserGroupData[];
+}
+
+export interface GraphUserData {
+    id: string;
+    displayName: string;
+    givenName?: string;
+    surname?: string;
+    jobTitle?: string;
+    mail: string;
+    mobilePhone?: string;
+    officeLocation?: string;
+    preferredLanguage?: string;
+    userPrincipalName?: string;
+    businessPhones?: string[];
+}
+
+export interface GraphUserGroupData {
+    id: string;
+    displayName: string;
+    description?: string;
+    mail?: string;
+    mailEnabled?: boolean;
+    mailNickname?: string;
+    securityEnabled?: boolean;
+    visibility?: string;
 }
 
 export interface Alert {

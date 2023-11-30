@@ -9,7 +9,7 @@ import { UserSettingsMenu } from './components/header/UserSettingsMenu';
 import { PluginGallery } from './components/open-api-plugins/PluginGallery';
 import { BackendProbe, ChatView, Error, Loading, Login } from './components/views';
 import { AuthHelper } from './libs/auth/AuthHelper';
-import { useChat, useFile } from './libs/hooks';
+import { useChat, useFile, useGraph } from './libs/hooks';
 import { AlertType } from './libs/models/AlertType';
 import { useAppDispatch, useAppSelector } from './redux/app/hooks';
 import { RootState } from './redux/app/store';
@@ -69,6 +69,7 @@ const App = () => {
 
     const chat = useChat();
     const file = useFile();
+    const user = useGraph();
 
     useEffect(() => {
         if (isMaintenance && appState !== AppState.ProbeForBackend) {
@@ -78,16 +79,28 @@ const App = () => {
 
         if (isAuthenticated && appState === AppState.SettingUserInfo) {
             const account = instance.getActiveAccount();
+
             if (!account) {
                 setAppState(AppState.ErrorLoadingUserInfo);
             } else {
-                dispatch(
-                    setActiveUserInfo({
-                        id: `${account.localAccountId}.${account.tenantId}`,
-                        email: account.username, // username is the email address
-                        username: account.name ?? account.username,
-                    }),
-                );
+                void Promise.all([
+                    user
+                        .userData()
+                        .then((user) => {
+                            dispatch(
+                                setActiveUserInfo({
+                                    id: `${account.localAccountId}.${account.tenantId}`,
+                                    email: account.username,
+                                    username: account.name ?? account.username,
+                                    graphUserData: user.userGraphData ?? undefined,
+                                    graphUserGroups: user.userGroups ?? undefined,
+                                }),
+                            );
+                        })
+                        .catch(() => {
+                            setAppState(AppState.ErrorLoadingUserInfo);
+                        }),
+                ]);
 
                 // Privacy disclaimer for internal Microsoft users
                 if (account.username.split('@')[1] === 'microsoft.com') {

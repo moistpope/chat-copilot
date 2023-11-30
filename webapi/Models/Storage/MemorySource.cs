@@ -33,6 +33,19 @@ public class MemorySource : IStorageEntity
     public string ChatId { get; set; } = string.Empty;
 
     /// <summary>
+    /// The User ID.
+    /// </summary>
+    [JsonPropertyName("userId")]
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The Group ID(s).
+    /// </summary>
+    [JsonPropertyName("groupIds")]
+#pragma warning disable CA1819 // Properties should not return arrays
+    public string[] GroupIds { get; set; } = Array.Empty<string>();
+
+    /// <summary>
     /// The type of the source.
     /// </summary>
     [JsonConverter(typeof(JsonStringEnumConverter))]
@@ -88,10 +101,12 @@ public class MemorySource : IStorageEntity
     {
     }
 
-    public MemorySource(string chatId, string name, string sharedBy, MemorySourceType type, long size, Uri? hyperlink)
+    public MemorySource(string chatId, string userId, string[] groupIds, string name, string sharedBy, MemorySourceType type, long size, Uri? hyperlink)
     {
         this.Id = Guid.NewGuid().ToString();
         this.ChatId = chatId;
+        this.UserId = userId;
+        this.GroupIds = groupIds;
         this.Name = name;
         this.SourceType = type;
         this.HyperLink = hyperlink;

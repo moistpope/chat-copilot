@@ -34,7 +34,7 @@ import botIcon3 from '../../assets/bot-icons/bot-icon-3.png';
 import botIcon4 from '../../assets/bot-icons/bot-icon-4.png';
 import botIcon5 from '../../assets/bot-icons/bot-icon-5.png';
 import { getErrorDetails } from '../../components/utils/TextUtils';
-import { FeatureKeys } from '../../redux/features/app/AppState';
+import { FeatureKeys, GraphUserData } from '../../redux/features/app/AppState';
 import { PlanState } from '../models/Plan';
 import { ContextVariable } from '../semantic-kernel/model/AskResult';
 
@@ -61,6 +61,7 @@ export const useChat = () => {
     const userId = activeUserInfo?.id ?? '';
     const fullName = activeUserInfo?.username ?? '';
     const emailAddress = activeUserInfo?.email ?? '';
+    const graphData = activeUserInfo?.graphUserData as GraphUserData;
     const loggedInUser: IChatUser = {
         id: userId,
         fullName,
@@ -137,6 +138,23 @@ export const useChat = () => {
 
         if (contextVariables) {
             ask.variables.push(...contextVariables);
+        }
+
+        for (const [key, value] of Object.entries(graphData)) {
+            // if value is an array, convert to string
+            let valueAsString = value as string;
+            if (Array.isArray(value)) {
+                valueAsString = value.join(',');
+            }
+
+            // skip if undefined/empty/null
+            if (key.startsWith('@') || !valueAsString) {
+                continue;
+            }
+            ask.variables.push({
+                key: `graph_${key}`,
+                value: valueAsString,
+            });
         }
 
         try {
@@ -294,13 +312,14 @@ export const useChat = () => {
         return [];
     };
 
-    const importDocument = async (chatId: string, files: File[]) => {
+    const importDocument = async (chatId: string, files: File[], uploadToGlobal: boolean) => {
         try {
             await documentImportService.importDocumentAsync(
                 chatId,
                 files,
                 features[FeatureKeys.AzureContentSafety].enabled,
                 await AuthHelper.getSKaaSAccessToken(instance, inProgress),
+                uploadToGlobal,
             );
         } catch (e: any) {
             let errorDetails = getErrorDetails(e);

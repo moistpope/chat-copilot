@@ -46,7 +46,7 @@ public sealed class Program
             .AddPersistentChatStore()
             .AddPlugins(builder.Configuration)
             .AddUtilities()
-            .AddChatCopilotAuthentication(builder.Configuration)
+            .AddChatCopilotAuthentication(builder.Configuration) ///////
             .AddChatCopilotAuthorization();
 
         // Configure and add semantic services

@@ -330,6 +330,25 @@ public class ChatPlugin
         await this.UpdateBotResponseStatusOnClientAsync(chatId, "Saving user message to chat history", cancellationToken);
         var newUserMessage = await this.SaveNewMessageAsync(message, userId, userName, chatId, messageType, cancellationToken);
 
+        List<string> semanticMemories = new();
+
+        foreach (var variable in context.Variables)
+        {
+            if (variable.Key.StartsWith("graph_", StringComparison.OrdinalIgnoreCase))
+            {
+                string formattedMemory = $"{variable.Key}: {variable.Value}\n";
+                semanticMemories.Add(formattedMemory);
+            }
+        }
+
+        await SemanticChatMemoryCreator.CreateSemanticChatMemories(
+            chatId,
+            semanticMemories,
+            this._memoryClient,
+            this._promptOptions,
+            this._logger,
+            cancellationToken);
+
         // Clone the context to avoid modifying the original context variables.
         var chatContext = context.Clone();
         chatContext.Variables.Set("knowledgeCutoff", this._promptOptions.KnowledgeCutoffDate);

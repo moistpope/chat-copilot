@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Http;
@@ -15,6 +16,12 @@ public class DocumentImportForm
     /// The file to import.
     /// </summary>
     public IEnumerable<IFormFile> FormFiles { get; set; } = Enumerable.Empty<IFormFile>();
+
+    /// <summary>
+    /// The array of group ID(s) to import the document to.
+    /// </summary>
+#pragma warning disable CA1819 // Properties should not return arrays
+    public string[] GroupIds { get; set; } = Array.Empty<string>();
 
     /// <summary>
     /// Flag indicating whether user has content safety enabled from the client.

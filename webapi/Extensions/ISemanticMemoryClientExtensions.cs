@@ -54,7 +54,10 @@ internal static class ISemanticMemoryClientExtensions
             }
         }
 
-        IKernelMemory memory = memoryBuilder.FromAppSettings().Build();
+        IKernelMemory memory = memoryBuilder.FromConfiguration(
+            memoryConfig,
+            appBuilder.Configuration
+        ).Build();
 
         appBuilder.Services.AddSingleton(memory);
     }
@@ -96,7 +99,7 @@ internal static class ISemanticMemoryClientExtensions
                 indexName,
                 filter,
                 null,
-                0,
+                relevanceThreshold,
                 resultCount,
                 cancellationToken);
 
@@ -108,6 +111,8 @@ internal static class ISemanticMemoryClientExtensions
         string indexName,
         string documentId,
         string chatId,
+        string userId,
+        string[] groupIds,
         string memoryName,
         string fileName,
         Stream fileContent,
@@ -123,6 +128,12 @@ internal static class ISemanticMemoryClientExtensions
             };
 
         uploadRequest.Tags.Add(MemoryTags.TagChatId, chatId);
+        uploadRequest.Tags.Add(MemoryTags.TagUserId, userId);
+        foreach (var groupId in groupIds)
+        {
+            uploadRequest.Tags.Add(MemoryTags.TagGroupId, groupId);
+        }
+
         uploadRequest.Tags.Add(MemoryTags.TagMemory, memoryName);
 
         await memoryClient.ImportDocumentAsync(uploadRequest, cancellationToken);
@@ -168,6 +179,7 @@ internal static class ISemanticMemoryClientExtensions
         };
 
         uploadRequest.Tags.Add(MemoryTags.TagChatId, chatId);
+
         uploadRequest.Tags.Add(MemoryTags.TagMemory, memoryName);
 
         await memoryClient.ImportDocumentAsync(uploadRequest, cancellationToken);
