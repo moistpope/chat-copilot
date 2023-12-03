@@ -17,9 +17,11 @@ using CopilotChat.WebApi.Options;
 using CopilotChat.WebApi.Plugins.Utils;
 using CopilotChat.WebApi.Services;
 using CopilotChat.WebApi.Storage;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.KernelMemory;
 using Microsoft.SemanticKernel;
@@ -321,6 +323,7 @@ public class ChatPlugin
         [Description("Unique and persistent identifier for the chat")] string chatId,
         [Description("Type of the message")] string messageType,
         SKContext context,
+        [FromServices] IAuthInfo authInfo,
         CancellationToken cancellationToken = default)
     {
         // Set the system description in the prompt options
@@ -332,14 +335,10 @@ public class ChatPlugin
 
         List<string> semanticMemories = new();
 
-        foreach (var variable in context.Variables)
-        {
-            if (variable.Key.StartsWith("graph_", StringComparison.OrdinalIgnoreCase))
-            {
-                string formattedMemory = $"{variable.Key}: {variable.Value}\n";
-                semanticMemories.Add(formattedMemory);
-            }
-        }
+
+        // add AuthInfo.GraphExtension.GetUserProfileAsync to semantic memories
+        var userInfo = await authInfo?.GraphExtension?.GetUserProfileAsync(userId) ?? new User();
+        semanticMemories.Add(userInfo.ToString() ?? string.Empty);
 
         await SemanticChatMemoryCreator.CreateSemanticChatMemories(
             chatId,

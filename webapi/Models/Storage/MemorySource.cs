@@ -1,6 +1,8 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Serialization;
 using CopilotChat.WebApi.Storage;
 
@@ -27,23 +29,14 @@ public class MemorySource : IStorageEntity
     public string Id { get; set; } = string.Empty;
 
     /// <summary>
-    /// The Chat ID.
+    /// The ids permitted to access the source.
     /// </summary>
-    [JsonPropertyName("chatId")]
-    public string ChatId { get; set; } = string.Empty;
+    public IEnumerable<string> ScopeIds { get; set; } = Enumerable.Empty<string>();
 
     /// <summary>
-    /// The User ID.
+    /// The user ID of who created the source.
     /// </summary>
-    [JsonPropertyName("userId")]
-    public string UserId { get; set; } = string.Empty;
-
-    /// <summary>
-    /// The Group ID(s).
-    /// </summary>
-    [JsonPropertyName("groupIds")]
-#pragma warning disable CA1819 // Properties should not return arrays
-    public string[] GroupIds { get; set; } = Array.Empty<string>();
+    public string CreatedBy { get; set; } = string.Empty;
 
     /// <summary>
     /// The type of the source.
@@ -92,7 +85,7 @@ public class MemorySource : IStorageEntity
     /// The partition key for the source.
     /// </summary>
     [JsonIgnore]
-    public string Partition => this.ChatId;
+    public string Partition => this.CreatedBy;
 
     /// <summary>
     /// Empty constructor for serialization.
@@ -101,15 +94,14 @@ public class MemorySource : IStorageEntity
     {
     }
 
-    public MemorySource(string chatId, string userId, string[] groupIds, string name, string sharedBy, MemorySourceType type, long size, Uri? hyperlink)
+    public MemorySource(IEnumerable<string> scopeIds, string name, string sharedBy, MemorySourceType type, string createdBy, long size, Uri? hyperlink)
     {
         this.Id = Guid.NewGuid().ToString();
-        this.ChatId = chatId;
-        this.UserId = userId;
-        this.GroupIds = groupIds;
+        this.ScopeIds = scopeIds;
         this.Name = name;
         this.SourceType = type;
         this.HyperLink = hyperlink;
+        this.CreatedBy = createdBy;
         this.SharedBy = sharedBy;
         this.CreatedOn = DateTimeOffset.Now;
         this.Size = size;

@@ -20,7 +20,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.KernelMemory;
 
 namespace CopilotChat.WebApi.Controllers;
@@ -80,7 +79,7 @@ public class DocumentController : ControllerBase
 
     /// <summary>
     /// Service API for importing a document.
-    /// Documents imported through this route will be considered as global documents.
+    /// Documents imported through this route will scoped by documentImportForm.ScopeIds.
     /// </summary>
     [Route("documents")]
     [HttpPost]
@@ -94,8 +93,6 @@ public class DocumentController : ControllerBase
         return this.DocumentImportAsync(
             memoryClient,
             messageRelayHubContext,
-            DocumentScopes.Global,
-            DocumentMemoryOptions.GlobalDocumentChatId,
             documentImportForm
         );
     }
@@ -110,27 +107,25 @@ public class DocumentController : ControllerBase
     public Task<IActionResult> DocumentImportAsync(
         [FromServices] IKernelMemory memoryClient,
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
-        [FromRoute] Guid chatId,
+        [FromRoute] string chatId,
         [FromForm] DocumentImportForm documentImportForm)
     {
         return this.DocumentImportAsync(
             memoryClient,
             messageRelayHubContext,
-            DocumentScopes.Chat,
-            chatId,
-            documentImportForm);
+            documentImportForm,
+            chatId);
     }
 
     private async Task<IActionResult> DocumentImportAsync(
         IKernelMemory memoryClient,
         IHubContext<MessageRelayHub> messageRelayHubContext,
-        DocumentScopes documentScope,
-        Guid chatId,
-        DocumentImportForm documentImportForm)
+        DocumentImportForm documentImportForm,
+        string? chatId = null)
     {
         try
         {
-            await this.ValidateDocumentImportFormAsync(chatId, documentScope, documentImportForm);
+            await this.ValidateDocumentImportFormAsync(this._authInfo.UserId, documentImportForm);
         }
         catch (ArgumentException ex)
         {
@@ -142,50 +137,56 @@ public class DocumentController : ControllerBase
         // Pre-create chat-message
         DocumentMessageContent documentMessageContent = new();
 
-        var importResults = await this.ImportDocumentsAsync(memoryClient, chatId, documentImportForm, documentMessageContent);
+        var importResults = await this.ImportDocumentsAsync(memoryClient, documentImportForm, documentMessageContent);
 
-        var chatMessage = await this.TryCreateDocumentUploadMessage(chatId, documentMessageContent);
-
-        if (chatMessage == null)
+        if (!string.IsNullOrEmpty(chatId))
         {
-            this._logger.LogWarning("Failed to create document upload message - {Content}", documentMessageContent.ToString());
-            return this.BadRequest();
-        }
+            var chatMessage = await this.TryCreateDocumentUploadMessage(chatId, documentMessageContent);
 
-        // Broadcast the document uploaded event to other users.
-        if (documentScope == DocumentScopes.Chat)
-        {
-            // If chat message isn't created, it is still broadcast and visible in the documents tab.
-            // The chat message won't, however, be displayed when the chat is freshly rendered.
+            if (chatMessage == null)
+            {
+                this._logger.LogWarning("Failed to create document upload message - {Content}", documentMessageContent.ToString());
+                return this.BadRequest();
+            }
 
             var userId = this._authInfo.UserId;
-            await messageRelayHubContext.Clients.Group(chatId.ToString())
+            await messageRelayHubContext.Clients.Group(chatId)
                 .SendAsync(ReceiveMessageClientCall, chatId, userId, chatMessage);
 
             this._logger.LogInformation("Local upload chat message: {0}", chatMessage.ToString());
 
             return this.Ok(chatMessage);
         }
+        else
+        {
+            var chatMessage = await this.TryCreateDocumentUploadMessage(Guid.Empty.ToString(), documentMessageContent);
 
-        await messageRelayHubContext.Clients.All.SendAsync(
+            if (chatMessage == null)
+            {
+                this._logger.LogWarning("Failed to create document upload message - {Content}", documentMessageContent.ToString());
+                return this.BadRequest();
+            }
+
+            await messageRelayHubContext.Clients.All.SendAsync(
             GlobalDocumentUploadedClientCall,
             documentMessageContent.ToFormattedStringNamesOnly(),
             this._authInfo.Name
         );
 
-        this._logger.LogInformation("Global upload chat message: {0}", chatMessage.ToString());
+            this._logger.LogInformation("Global upload chat message: {0}", chatMessage.ToString());
 
-        return this.Ok(chatMessage);
+            return this.Ok(chatMessage);
+        }
     }
 
-    private async Task<IList<ImportResult>> ImportDocumentsAsync(IKernelMemory memoryClient, Guid chatId, DocumentImportForm documentImportForm, DocumentMessageContent messageContent)
+    private async Task<IList<ImportResult>> ImportDocumentsAsync(IKernelMemory memoryClient, DocumentImportForm documentImportForm, DocumentMessageContent messageContent)
     {
         IEnumerable<ImportResult> importResults = new List<ImportResult>();
 
         await Task.WhenAll(
             documentImportForm.FormFiles.Select(
                 async formFile =>
-                    await this.ImportDocumentAsync(formFile, memoryClient, chatId).ContinueWith(
+                    await this.ImportDocumentAsync(formFile, memoryClient, (string[])documentImportForm.ScopeIds, this._authInfo.UserId).ContinueWith(
                         task =>
                         {
                             var importResult = task.Result;
@@ -204,16 +205,17 @@ public class DocumentController : ControllerBase
         return importResults.ToArray();
     }
 
-    private async Task<ImportResult> ImportDocumentAsync(IFormFile formFile, IKernelMemory memoryClient, Guid chatId)
+    private async Task<ImportResult> ImportDocumentAsync(IFormFile formFile, IKernelMemory memoryClient, string[] scopeIds, string userId)
     {
         this._logger.LogInformation("Importing document {0}", formFile.FileName);
 
         // Create memory source
         MemorySource memorySource = new(
-            chatId.ToString(),
+            scopeIds,
             formFile.FileName,
-            this._authInfo.UserId,
+            userId,
             MemorySourceType.File,
+            userId,
             formFile.Length,
             hyperlink: null
         );
@@ -230,21 +232,7 @@ public class DocumentController : ControllerBase
             await this.TryRemoveMemoryAsync(memorySource);
         }
 
-<<<<<<< Updated upstream
         return new ImportResult(memorySource.Id);
-=======
-            // Create memory source
-            MemorySource memorySource = new(
-                chatId.ToString(),
-                this._authInfo.UserId,
-                documentImportForm.GroupIds,
-                formFile.FileName,
-                this._authInfo.UserId,
-                MemorySourceType.File,
-                formFile.Length,
-                hyperlink: null
-            );
->>>>>>> Stashed changes
 
         async Task<bool> TryStoreMemoryAsync()
         {
@@ -254,7 +242,8 @@ public class DocumentController : ControllerBase
                 await memoryClient.StoreDocumentAsync(
                     this._promptOptions.MemoryIndexName,
                     memorySource.Id,
-                    chatId.ToString(),
+                    scopeIds,
+                    userId,
                     this._promptOptions.DocumentMemoryName,
                     formFile.FileName,
                     stream);
@@ -263,36 +252,7 @@ public class DocumentController : ControllerBase
             }
             catch (Exception ex) when (ex is not SystemException)
             {
-<<<<<<< Updated upstream
                 return false;
-=======
-                await this.TryRemoveMemoryAsync(memorySource);
-            }
-
-            return new ImportResult(memorySource.Id);
-
-            async Task<bool> TryStoreMemoryAsync()
-            {
-                try
-                {
-                    using var stream = formFile.OpenReadStream();
-                    await memoryClient.StoreDocumentAsync(
-                        this._promptOptions.MemoryIndexName,
-                        memorySource.Id,
-                        chatId.ToString(),
-                        this._authInfo.UserId,
-                        // documentImportForm.GroupIds,
-                        this._promptOptions.DocumentMemoryName,
-                        formFile.FileName,
-                        stream);
-
-                    return true;
-                }
-                catch (Exception ex) when (ex is not SystemException)
-                {
-                    return false;
-                }
->>>>>>> Stashed changes
             }
         }
     }
@@ -335,11 +295,11 @@ public class DocumentController : ControllerBase
     /// <param name="documentImportForm">The document import form.</param>
     /// <returns></returns>
     /// <exception cref="ArgumentException">Throws ArgumentException if validation fails.</exception>
-    private async Task ValidateDocumentImportFormAsync(Guid chatId, DocumentScopes scope, DocumentImportForm documentImportForm)
+    private async Task ValidateDocumentImportFormAsync(string userId, DocumentImportForm documentImportForm)
     {
+        // TODO: Validate that all scopeIds are accesible to user. userId, groupIds, chatIds, global. 
         // Make sure the user has access to the chat session if the document is uploaded to a chat session.
-        if (scope == DocumentScopes.Chat
-                && !(await this.UserHasAccessToChatAsync(this._authInfo.UserId, chatId)))
+        if (!(await this.UserHasAccessToChatAsync(this._authInfo, (string[])documentImportForm.ScopeIds)))
         {
             throw new ArgumentException("User does not have access to the chat session.");
         }
@@ -412,8 +372,7 @@ public class DocumentController : ControllerBase
     private async Task ValidateDocumentStatusFormAsync(DocumentStatusForm documentStatusForm)
     {
         // Make sure the user has access to the chat session if the document is uploaded to a chat session.
-        if (documentStatusForm.DocumentScope == DocumentScopes.Chat
-                && !(await this.UserHasAccessToChatAsync(documentStatusForm.UserId, documentStatusForm.ChatId)))
+        if (!(await this.UserHasAccessToChatAsync(this._authInfo, (string[])documentStatusForm.ScopeIds)))
         {
             throw new ArgumentException("User does not have access to the chat session.");
         }
@@ -500,13 +459,13 @@ public class DocumentController : ControllerBase
     /// <param name="messageContent">The document message content</param>
     /// <returns>A ChatMessage object if successful, null otherwise</returns>
     private async Task<CopilotChatMessage?> TryCreateDocumentUploadMessage(
-        Guid chatId,
+        string chatId,
         DocumentMessageContent messageContent)
     {
         var chatMessage = CopilotChatMessage.CreateDocumentMessage(
             this._authInfo.UserId,
             this._authInfo.Name, // User name
-            chatId.ToString(),
+            chatId,
             messageContent);
 
         try
@@ -544,10 +503,38 @@ public class DocumentController : ControllerBase
     /// <param name="userId">The user ID.</param>
     /// <param name="chatId">The chat session ID.</param>
     /// <returns>A boolean indicating whether the user has access to the chat session.</returns>
-    private async Task<bool> UserHasAccessToChatAsync(string userId, Guid chatId)
+    private async Task<bool> UserHasAccessToChatAsync(IAuthInfo user, string[] scopeIds)
     {
-        return await this._participantRepository.IsUserInChatAsync(userId, chatId.ToString());
+        // return await this._participantRepository.IsUserInChatAsync(userId, chatId);
+        // return true if only chatId is empty guid
+        if (scopeIds.Length == 1 && scopeIds.First() == Guid.Empty.ToString())
+        {
+            return true;
+        }
+
+        // return true if user is in all chatIds
+        return await Task.Run(() => scopeIds.All(id => this._participantRepository.IsUserInChatAsync(user.UserId, id).Result));
     }
 
+    /// <summary>
+    /// Check if the user has access to all scopeIds
+    /// </summary>
+    /// <param name="userId">The user ID.</param>
+    /// <param name="scopeIds">The scope IDs.</param>
+    /// <returns>A boolean indicating whether the user has access to all scopeIds.</returns>
+    private async Task<bool> UserHasAccessToAllScopesAsync(IAuthInfo user, IEnumerable<string> scopeIds)
+    {
+        var scopeIdsArray = scopeIds.ToArray();
+        var excludedValues = new string[] { Guid.Empty.ToString(), user.UserId };
+        if (scopeIdsArray.Length == 1 && (scopeIdsArray.First() == Guid.Empty.ToString() || scopeIdsArray.First() == user.UserId))
+        {
+            return true;
+        }
+
+        var notInGroups = scopeIdsArray.Except(excludedValues).Except(user.UserGroups).ToList();
+
+        // return true if user is in all chatIds
+        return await Task.Run(() => notInGroups.All(id => this._participantRepository.IsUserInChatAsync(user.UserId, id).Result));
+    }
     #endregion
 }

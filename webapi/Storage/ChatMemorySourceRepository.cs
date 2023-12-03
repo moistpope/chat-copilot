@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using CopilotChat.WebApi.Models.Storage;
 
@@ -22,14 +23,30 @@ public class ChatMemorySourceRepository : Repository<MemorySource>
     }
 
     /// <summary>
-    /// Finds chat memory sources by chat session id
+    /// Finds chat memory sources by user, chat, or group id
+    /// Currently a mask for FindByChatIdAsync as userIds, chatIds, and global are expanded to explicit permissions
     /// </summary>
-    /// <param name="chatId">The chat session id.</param>
+    /// <param name="scopeIds">The chat session id.</param>
     /// <param name="includeGlobal">Flag specifying if global documents should be included in the response.</param>
     /// <returns>A list of memory sources.</returns>
-    public Task<IEnumerable<MemorySource>> FindByChatIdAsync(string chatId, bool includeGlobal = true)
+    public Task<IEnumerable<MemorySource>> FindByScopeIdAsync(string[] scopeIds, bool includeGlobal = true)
     {
-        return base.StorageContext.QueryEntitiesAsync(e => e.ChatId == chatId || (includeGlobal && e.ChatId == Guid.Empty.ToString()));
+        return base.StorageContext.QueryEntitiesAsync(e => scopeIds.Any(gid => e.ScopeIds.Contains(gid)) || (includeGlobal && (e.ScopeIds.Contains(Guid.Empty.ToString()))));
+    }
+
+    public Task<IEnumerable<MemorySource>> FindByScopeIdAsync(string scopeId, bool includeGlobal = true)
+    {
+        return base.StorageContext.QueryEntitiesAsync(e => e.ScopeIds.Contains(scopeId) || (includeGlobal && (e.ScopeIds.Contains(Guid.Empty.ToString()))));
+    }
+
+    /// <summary>
+    /// Finds chat memory sources by chat id
+    /// </summary>
+    /// <param name="chatId">The chat session id.</param>
+    /// <returns>A list of memory sources.</returns>
+    public Task<IEnumerable<MemorySource>> FindByChatIdAsync(string chatId)
+    {
+        return base.StorageContext.QueryEntitiesAsync(e => e.ScopeIds.Contains(chatId));
     }
 
     /// <summary>

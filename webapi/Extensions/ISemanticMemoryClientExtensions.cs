@@ -32,7 +32,7 @@ internal static class ISemanticMemoryClientExtensions
 
         var memoryConfig = serviceProvider.GetRequiredService<IOptions<KernelMemoryConfig>>().Value;
 
-        var ocrType = memoryConfig.ImageOcrType;
+        var ocrType = memoryConfig.DataIngestion.ImageOcrType;
         var hasOcr = !string.IsNullOrWhiteSpace(ocrType) && !ocrType.Equals(MemoryConfiguration.NoneType, StringComparison.OrdinalIgnoreCase);
 
         var pipelineType = memoryConfig.DataIngestion.OrchestrationType;
@@ -86,7 +86,7 @@ internal static class ISemanticMemoryClientExtensions
     {
         var filter = new MemoryFilter();
 
-        filter.ByTag(MemoryTags.TagChatId, chatId);
+        filter.ByTag(MemoryTags.TagScopeId, chatId);
 
         if (!string.IsNullOrWhiteSpace(memoryName))
         {
@@ -110,9 +110,8 @@ internal static class ISemanticMemoryClientExtensions
         this IKernelMemory memoryClient,
         string indexName,
         string documentId,
-        string chatId,
-        string userId,
-        string[] groupIds,
+        IEnumerable<string> scopeIds,
+        string createdBy,
         string memoryName,
         string fileName,
         Stream fileContent,
@@ -127,12 +126,9 @@ internal static class ISemanticMemoryClientExtensions
                 Steps = pipelineSteps,
             };
 
-        uploadRequest.Tags.Add(MemoryTags.TagChatId, chatId);
-        uploadRequest.Tags.Add(MemoryTags.TagUserId, userId);
-        foreach (var groupId in groupIds)
-        {
-            uploadRequest.Tags.Add(MemoryTags.TagGroupId, groupId);
-        }
+        uploadRequest.Tags.Add(MemoryTags.TagCreatedBy, createdBy);
+
+        uploadRequest.Tags.Add(MemoryTags.TagScopeId, scopeIds.Select(id => (string?)id).ToList());
 
         uploadRequest.Tags.Add(MemoryTags.TagMemory, memoryName);
 
@@ -178,7 +174,7 @@ internal static class ISemanticMemoryClientExtensions
             Steps = pipelineSteps,
         };
 
-        uploadRequest.Tags.Add(MemoryTags.TagChatId, chatId);
+        uploadRequest.Tags.Add(MemoryTags.TagScopeId, chatId);
 
         uploadRequest.Tags.Add(MemoryTags.TagMemory, memoryName);
 

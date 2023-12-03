@@ -56,7 +56,9 @@ public class CosmosDbContext<T> : IStorageContext<T>, IDisposable where T : ISto
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         await this._container.CreateItemAsync(entity, new PartitionKey(entity.Partition));
@@ -67,7 +69,9 @@ public class CosmosDbContext<T> : IStorageContext<T>, IDisposable where T : ISto
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         await this._container.DeleteItemAsync<T>(entity.Id, new PartitionKey(entity.Partition));
@@ -97,7 +101,9 @@ public class CosmosDbContext<T> : IStorageContext<T>, IDisposable where T : ISto
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         await this._container.UpsertItemAsync(entity, new PartitionKey(entity.Partition));

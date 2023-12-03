@@ -245,6 +245,8 @@ public class ChatHistoryController : ControllerBase
 
         if (await this._sessionRepository.TryFindByIdAsync(chatId.ToString()))
         {
+            // TODO: Get groups common to all participants
+
             IEnumerable<MemorySource> sources = await this._sourceRepository.FindByChatIdAsync(chatId.ToString());
 
             return this.Ok(sources);
@@ -321,7 +323,7 @@ public class ChatHistoryController : ControllerBase
         }
 
         // Create and store the tasks for deleting memory sources.
-        var sources = await this._sourceRepository.FindByChatIdAsync(chatId, false);
+        var sources = await this._sourceRepository.FindByScopeIdAsync(chatId, false);
         foreach (var source in sources)
         {
             cleanupTasks.Add(this._sourceRepository.DeleteAsync(source));

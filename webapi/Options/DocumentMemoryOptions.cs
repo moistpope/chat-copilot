@@ -43,7 +43,7 @@ public class DocumentMemoryOptions
     /// https://help.openai.com/en/articles/4936856-what-are-tokens-and-how-to-count-them
     /// </summary>
     [Range(0, int.MaxValue)]
-    public int DocumentChunkMaxTokens { get; set; } = 100;
+    public int DocumentChunkMaxTokens { get; set; } = 1000;
 
     /// <summary>
     /// Maximum size in bytes of a document to be allowed for importing.

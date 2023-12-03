@@ -29,7 +29,9 @@ public class Repository<T> : IRepository<T> where T : IStorageEntity
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity ID cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         return this.StorageContext.CreateAsync(entity);

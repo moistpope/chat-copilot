@@ -307,6 +307,10 @@ public class ChatController : ControllerBase, IDisposable
                 });
         }
 
+        // middleware to add auth headers to state
+        // maybe create msgraph sdk client in state
+        // maintain user and group state in state
+
         // Microsoft Graph
         if (authHeaders.TryGetValue("GRAPH", out string? GraphAuthHeader))
         {

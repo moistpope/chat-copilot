@@ -1,6 +1,5 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -17,17 +16,10 @@ public class DocumentStatusForm
     public IEnumerable<string> FileReferences { get; set; } = Enumerable.Empty<string>();
 
     /// <summary>
-    /// Scope of the document. This determines the collection name in the document memory.
+    /// The scope IDs that can access the document.
+    /// Can be user ID, group ID(s), chat ID(s), global, or any combination of the above.
     /// </summary>
-    public DocumentScopes DocumentScope { get; set; } = DocumentScopes.Chat;
-
-    /// <summary>
-    /// The ID of the chat that owns the document.
-    /// This is used to create a unique collection name for the chat.
-    /// If the chat ID is not specified or empty, the documents will be stored in a global collection.
-    /// If the document scope is set to global, this value is ignored.
-    /// </summary>
-    public Guid ChatId { get; set; } = Guid.Empty;
+    public IEnumerable<string> ScopeIds { get; set; } = Enumerable.Empty<string>();
 
     /// <summary>
     /// The ID of the user who is importing the document to a chat session.

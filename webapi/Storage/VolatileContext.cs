@@ -39,7 +39,9 @@ public class VolatileContext<T> : IStorageContext<T> where T : IStorageEntity
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         this._entities.TryAdd(entity.Id, entity);
@@ -52,7 +54,9 @@ public class VolatileContext<T> : IStorageContext<T> where T : IStorageEntity
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         this._entities.TryRemove(entity.Id, out _);
@@ -81,7 +85,9 @@ public class VolatileContext<T> : IStorageContext<T> where T : IStorageEntity
     {
         if (string.IsNullOrWhiteSpace(entity.Id))
         {
+#pragma warning disable CA2208 // Instantiate argument exceptions correctly
             throw new ArgumentOutOfRangeException(nameof(entity.Id), "Entity Id cannot be null or empty.");
+#pragma warning restore CA2208 // Instantiate argument exceptions correctly
         }
 
         this._entities.AddOrUpdate(entity.Id, entity, (key, oldValue) => entity);
