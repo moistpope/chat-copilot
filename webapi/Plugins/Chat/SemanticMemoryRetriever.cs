@@ -62,7 +62,7 @@ public class SemanticMemoryRetriever
     /// <returns>A string containing the relevant memories.</returns>
     public async Task<(string, IDictionary<string, CitationSource>)> QueryMemoriesAsync(
         [Description("Query to match.")] string query,
-        [Description("Chat ID to query history from")] string chatId,
+        [Description("Scope ID (user, chat, group) to match history from")] string chatId,
         [Description("Maximum number of tokens")] int tokenLimit)
     {
         ChatSession? chatSession = null;

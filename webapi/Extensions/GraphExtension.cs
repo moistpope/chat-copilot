@@ -78,6 +78,12 @@ public class GraphExtension
         return result;
     }
 
+    public async Task<IEnumerable<string>?> GetUserGroupIdsAsync(string userId)
+    {
+        var groups = await this.GetUserGroupsAsync(userId);
+        return groups?.Select(g => g.Id);
+    }
+
     /// <summary>
     /// Get the user's profile picture.
     /// </summary>

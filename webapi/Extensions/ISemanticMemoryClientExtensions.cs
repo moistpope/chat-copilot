@@ -32,7 +32,7 @@ internal static class ISemanticMemoryClientExtensions
 
         var memoryConfig = serviceProvider.GetRequiredService<IOptions<KernelMemoryConfig>>().Value;
 
-        var ocrType = memoryConfig.DataIngestion.ImageOcrType;
+        var ocrType = memoryConfig.ImageOcrType;
         var hasOcr = !string.IsNullOrWhiteSpace(ocrType) && !ocrType.Equals(MemoryConfiguration.NoneType, StringComparison.OrdinalIgnoreCase);
 
         var pipelineType = memoryConfig.DataIngestion.OrchestrationType;
@@ -68,6 +68,7 @@ internal static class ISemanticMemoryClientExtensions
         string query,
         float relevanceThreshold,
         string chatId,
+        string[]? scopeIds = null,
         string? memoryName = null,
         CancellationToken cancellationToken = default)
     {

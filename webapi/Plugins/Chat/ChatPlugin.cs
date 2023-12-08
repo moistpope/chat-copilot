@@ -70,6 +70,11 @@ public class ChatPlugin
     private readonly ChatSessionRepository _chatSessionRepository;
 
     /// <summary>
+    /// A repository to save and retrieve chat participants.
+    /// </summary>
+    private readonly ChatParticipantRepository _chatParticipantRepository;
+
+    /// <summary>
     /// A SignalR hub context to broadcast updates of the execution.
     /// </summary>
     private readonly IHubContext<MessageRelayHub> _messageRelayHubContext;
@@ -90,6 +95,11 @@ public class ChatPlugin
     private readonly ExternalInformationPlugin _externalInformationPlugin;
 
     /// <summary>
+    /// User authentication information
+    /// </summary>
+    private readonly IAuthInfo _authInfo;
+
+    /// <summary>
     /// Azure content safety moderator.
     /// </summary>
     private readonly AzureContentSafety? _contentSafety = null;
@@ -102,10 +112,12 @@ public class ChatPlugin
         IKernelMemory memoryClient,
         ChatMessageRepository chatMessageRepository,
         ChatSessionRepository chatSessionRepository,
+        ChatParticipantRepository chatParticipantRepository,
         IHubContext<MessageRelayHub> messageRelayHubContext,
         IOptions<PromptsOptions> promptOptions,
         IOptions<DocumentMemoryOptions> documentImportOptions,
         CopilotChatPlanner planner,
+        IAuthInfo authInfo,
         ILogger logger,
         AzureContentSafety? contentSafety = null)
     {
@@ -114,9 +126,12 @@ public class ChatPlugin
         this._memoryClient = memoryClient;
         this._chatMessageRepository = chatMessageRepository;
         this._chatSessionRepository = chatSessionRepository;
+        this._chatParticipantRepository = chatParticipantRepository;
         this._messageRelayHubContext = messageRelayHubContext;
         // Clone the prompt options to avoid modifying the original prompt options.
         this._promptOptions = promptOptions.Value.Copy();
+
+        this._authInfo = authInfo;
 
         this._semanticMemoryRetriever = new SemanticMemoryRetriever(
             promptOptions,
@@ -323,7 +338,6 @@ public class ChatPlugin
         [Description("Unique and persistent identifier for the chat")] string chatId,
         [Description("Type of the message")] string messageType,
         SKContext context,
-        [FromServices] IAuthInfo authInfo,
         CancellationToken cancellationToken = default)
     {
         // Set the system description in the prompt options
@@ -335,10 +349,12 @@ public class ChatPlugin
 
         List<string> semanticMemories = new();
 
-
         // add AuthInfo.GraphExtension.GetUserProfileAsync to semantic memories
-        var userInfo = await authInfo?.GraphExtension?.GetUserProfileAsync(userId) ?? new User();
-        semanticMemories.Add(userInfo.ToString() ?? string.Empty);
+        if (this._authInfo.GraphExtension != null)
+        {
+            var userInfo = await this._authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
+            semanticMemories.Add(userInfo.ToString() ?? string.Empty);
+        }
 
         await SemanticChatMemoryCreator.CreateSemanticChatMemories(
             chatId,
@@ -599,6 +615,37 @@ public class ChatPlugin
         {
             var promptDetails = new BotResponsePrompt("", "", userIntent, "", plannerDetails, "", new ChatHistory());
             return await this.HandleBotResponseAsync(chatId, userId, chatContext, promptDetails, cancellationToken, null, this._externalInformationPlugin.StepwiseThoughtProcess!.RawResult);
+        }
+
+        // Get the list of participants in the chat session.
+        await this.UpdateBotResponseStatusOnClientAsync(chatId, "Extracting chat participants", cancellationToken);
+        var chatParticipants = await this._chatParticipantRepository.FindByChatIdAsync(chatId);
+        var accessibleScopeIds = new List<string>() { chatId };
+        switch (chatParticipants.Count())
+        {
+            case 0:
+                throw new ArgumentException("No chat participants found.");
+            case 1:
+                accessibleScopeIds.Add(userId);
+                accessibleScopeIds = this._authInfo.UserGroups?.ToList();
+                break;
+            case int n when (n > 1 && n < 10):
+                var graphClient = this._authInfo.GraphExtension;
+                if (graphClient == null)
+                {
+                    break;
+                }
+                var scopeIdsLists = await Task.WhenAll(chatParticipants.Select(p => graphClient.GetUserGroupIdsAsync(p.Id)));
+                if (scopeIdsLists.Any(ids => ids == null))
+                {
+                    break;
+                }
+                accessibleScopeIds.AddRange(scopeIdsLists.Aggregate((prev, next) => prev.Intersect(next)).ToList());
+                break;
+            case int n when (n >= 10):
+                break;
+            default:
+                break;
         }
 
         // Query relevant semantic and document memories
