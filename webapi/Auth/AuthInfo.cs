@@ -56,7 +56,7 @@ public class AuthInfo : IAuthInfo
                 if (graphAuthHeader is not null)
                 {
                     // get graph extension
-                    this._graphExtension = new GraphExtension(graphAuthHeader);
+                    this._graphExtension = new GraphExtension(graphAuthHeader!);
                 }
             }
 

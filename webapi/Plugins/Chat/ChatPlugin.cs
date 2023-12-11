@@ -95,11 +95,6 @@ public class ChatPlugin
     private readonly ExternalInformationPlugin _externalInformationPlugin;
 
     /// <summary>
-    /// User authentication information
-    /// </summary>
-    private readonly IAuthInfo _authInfo;
-
-    /// <summary>
     /// Azure content safety moderator.
     /// </summary>
     private readonly AzureContentSafety? _contentSafety = null;
@@ -117,7 +112,6 @@ public class ChatPlugin
         IOptions<PromptsOptions> promptOptions,
         IOptions<DocumentMemoryOptions> documentImportOptions,
         CopilotChatPlanner planner,
-        IAuthInfo authInfo,
         ILogger logger,
         AzureContentSafety? contentSafety = null)
     {
@@ -130,8 +124,6 @@ public class ChatPlugin
         this._messageRelayHubContext = messageRelayHubContext;
         // Clone the prompt options to avoid modifying the original prompt options.
         this._promptOptions = promptOptions.Value.Copy();
-
-        this._authInfo = authInfo;
 
         this._semanticMemoryRetriever = new SemanticMemoryRetriever(
             promptOptions,
@@ -337,6 +329,7 @@ public class ChatPlugin
         [Description("Name of the user")] string userName,
         [Description("Unique and persistent identifier for the chat")] string chatId,
         [Description("Type of the message")] string messageType,
+        [FromServices] IAuthInfo authInfo,
         SKContext context,
         CancellationToken cancellationToken = default)
     {
@@ -350,9 +343,9 @@ public class ChatPlugin
         List<string> semanticMemories = new();
 
         // add AuthInfo.GraphExtension.GetUserProfileAsync to semantic memories
-        if (this._authInfo.GraphExtension != null)
+        if (authInfo.GraphExtension != null)
         {
-            var userInfo = await this._authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
+            var userInfo = await authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
             semanticMemories.Add(userInfo.ToString() ?? string.Empty);
         }
 
@@ -368,7 +361,7 @@ public class ChatPlugin
         var chatContext = context.Clone();
         chatContext.Variables.Set("knowledgeCutoff", this._promptOptions.KnowledgeCutoffDate);
 
-        CopilotChatMessage chatMessage = await this.GetChatResponseAsync(chatId, userId, chatContext, newUserMessage, cancellationToken);
+        CopilotChatMessage chatMessage = await this.GetChatResponseAsync(chatId, userId, chatContext, newUserMessage, authInfo, cancellationToken);
         context.Variables.Update(chatMessage.Content);
 
         if (chatMessage.TokenUsage != null)
@@ -553,7 +546,7 @@ public class ChatPlugin
     /// <param name="userMessage">ChatMessage object representing new user message.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The created chat message containing the model-generated response.</returns>
-    private async Task<CopilotChatMessage> GetChatResponseAsync(string chatId, string userId, SKContext chatContext, CopilotChatMessage userMessage, CancellationToken cancellationToken)
+    private async Task<CopilotChatMessage> GetChatResponseAsync(string chatId, string userId, SKContext chatContext, CopilotChatMessage userMessage, IAuthInfo authInfo, CancellationToken cancellationToken)
     {
         // Render system instruction components and create the meta-prompt template
         var systemInstructions = await AsyncUtils.SafeInvokeAsync(
@@ -627,10 +620,10 @@ public class ChatPlugin
                 throw new ArgumentException("No chat participants found.");
             case 1:
                 accessibleScopeIds.Add(userId);
-                accessibleScopeIds = this._authInfo.UserGroups?.ToList();
+                accessibleScopeIds = authInfo.UserGroups?.ToList();
                 break;
             case int n when (n > 1 && n < 10):
-                var graphClient = this._authInfo.GraphExtension;
+                var graphClient = authInfo.GraphExtension;
                 if (graphClient == null)
                 {
                     break;
@@ -640,7 +633,7 @@ public class ChatPlugin
                 {
                     break;
                 }
-                accessibleScopeIds.AddRange(scopeIdsLists.Aggregate((prev, next) => prev.Intersect(next)).ToList());
+                accessibleScopeIds?.AddRange(scopeIdsLists.Aggregate((prev, next) => prev!.Intersect(next!))?.ToList()?.Distinct() ?? new List<string>());
                 break;
             case int n when (n >= 10):
                 break;
@@ -651,7 +644,7 @@ public class ChatPlugin
         // Query relevant semantic and document memories
         await this.UpdateBotResponseStatusOnClientAsync(chatId, "Extracting semantic and document memories", cancellationToken);
         var chatMemoriesTokenLimit = (int)(remainingTokenBudget * this._promptOptions.MemoriesResponseContextWeight);
-        (var memoryText, var citationMap) = await this._semanticMemoryRetriever.QueryMemoriesAsync(userIntent, chatId, chatMemoriesTokenLimit);
+        (var memoryText, var citationMap) = await this._semanticMemoryRetriever.QueryMemoriesAsync(userIntent, chatId, chatMemoriesTokenLimit, authInfo);
 
         if (!string.IsNullOrWhiteSpace(memoryText))
         {

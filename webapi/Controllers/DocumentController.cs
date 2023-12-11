@@ -295,11 +295,17 @@ public class DocumentController : ControllerBase
     /// <param name="documentImportForm">The document import form.</param>
     /// <returns></returns>
     /// <exception cref="ArgumentException">Throws ArgumentException if validation fails.</exception>
-    private async Task ValidateDocumentImportFormAsync(string userId, DocumentImportForm documentImportForm)
+    private async Task ValidateDocumentImportFormAsync(string userId, DocumentImportForm documentImportForm, string? chatId = null)
     {
-        // TODO: Validate that all scopeIds are accesible to user. userId, groupIds, chatIds, global. 
+        var scopeIds = documentImportForm.ScopeIds;
+
+        if (chatId != null)
+        {
+            scopeIds = scopeIds.Append(chatId).ToArray();
+        }
+
         // Make sure the user has access to the chat session if the document is uploaded to a chat session.
-        if (!(await this.UserHasAccessToChatAsync(this._authInfo, (string[])documentImportForm.ScopeIds)))
+        if (!await this.UserHasAccessToAllScopesAsync(this._authInfo, (string[])scopeIds))
         {
             throw new ArgumentException("User does not have access to the chat session.");
         }
@@ -372,7 +378,7 @@ public class DocumentController : ControllerBase
     private async Task ValidateDocumentStatusFormAsync(DocumentStatusForm documentStatusForm)
     {
         // Make sure the user has access to the chat session if the document is uploaded to a chat session.
-        if (!(await this.UserHasAccessToChatAsync(this._authInfo, (string[])documentStatusForm.ScopeIds)))
+        if (!await this.UserHasAccessToAllScopesAsync(this._authInfo, (string[])documentStatusForm.ScopeIds))
         {
             throw new ArgumentException("User does not have access to the chat session.");
         }
@@ -498,25 +504,6 @@ public class DocumentController : ControllerBase
     }
 
     /// <summary>
-    /// Check if the user has access to the chat session.
-    /// </summary>
-    /// <param name="userId">The user ID.</param>
-    /// <param name="chatId">The chat session ID.</param>
-    /// <returns>A boolean indicating whether the user has access to the chat session.</returns>
-    private async Task<bool> UserHasAccessToChatAsync(IAuthInfo user, string[] scopeIds)
-    {
-        // return await this._participantRepository.IsUserInChatAsync(userId, chatId);
-        // return true if only chatId is empty guid
-        if (scopeIds.Length == 1 && scopeIds.First() == Guid.Empty.ToString())
-        {
-            return true;
-        }
-
-        // return true if user is in all chatIds
-        return await Task.Run(() => scopeIds.All(id => this._participantRepository.IsUserInChatAsync(user.UserId, id).Result));
-    }
-
-    /// <summary>
     /// Check if the user has access to all scopeIds
     /// </summary>
     /// <param name="userId">The user ID.</param>
@@ -524,16 +511,22 @@ public class DocumentController : ControllerBase
     /// <returns>A boolean indicating whether the user has access to all scopeIds.</returns>
     private async Task<bool> UserHasAccessToAllScopesAsync(IAuthInfo user, IEnumerable<string> scopeIds)
     {
-        var scopeIdsArray = scopeIds.ToArray();
+        var scopeIdsArray = scopeIds.Where(id => !string.IsNullOrWhiteSpace(id)).ToArray();
+
         var excludedValues = new string[] { Guid.Empty.ToString(), user.UserId };
         if (scopeIdsArray.Length == 1 && (scopeIdsArray.First() == Guid.Empty.ToString() || scopeIdsArray.First() == user.UserId))
         {
             return true;
         }
 
-        var notInGroups = scopeIdsArray.Except(excludedValues).Except(user.UserGroups).ToList();
+        var notInGroups = scopeIdsArray.Except(excludedValues).ToList();
+        if (user.UserGroups != null)
+        {
+            notInGroups = notInGroups.Except(user.UserGroups).ToList();
+        }
 
         // return true if user is in all chatIds
+        // global, user id, all user groups have been removed, so the only thing left should be chatIds
         return await Task.Run(() => notInGroups.All(id => this._participantRepository.IsUserInChatAsync(user.UserId, id).Result));
     }
     #endregion

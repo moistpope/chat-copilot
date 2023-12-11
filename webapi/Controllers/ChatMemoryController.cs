@@ -99,6 +99,7 @@ public class ChatMemoryController : ControllerBase
                     relevanceThreshold: 0,
                     resultCount: 1,
                     chatId,
+                    scopeIds: null,
                     memoryContainerName);
 
             foreach (var memory in searchResult.Results.SelectMany(c => c.Partitions))

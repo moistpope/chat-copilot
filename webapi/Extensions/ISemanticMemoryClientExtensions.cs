@@ -72,7 +72,7 @@ internal static class ISemanticMemoryClientExtensions
         string? memoryName = null,
         CancellationToken cancellationToken = default)
     {
-        return memoryClient.SearchMemoryAsync(indexName, query, relevanceThreshold, resultCount: -1, chatId, memoryName, cancellationToken);
+        return memoryClient.SearchMemoryAsync(indexName, query, relevanceThreshold, resultCount: -1, chatId, scopeIds, memoryName, cancellationToken);
     }
 
     public static async Task<SearchResult> SearchMemoryAsync(
@@ -82,16 +82,25 @@ internal static class ISemanticMemoryClientExtensions
         float relevanceThreshold,
         int resultCount,
         string chatId,
+        string[]? scopeIds = null,
         string? memoryName = null,
         CancellationToken cancellationToken = default)
     {
         var filter = new MemoryFilter();
 
-        filter.ByTag(MemoryTags.TagScopeId, chatId);
+        // filter.ByTag(MemoryTags.TagScopeId, chatId);
 
-        if (!string.IsNullOrWhiteSpace(memoryName))
+        var fullScopeIds = new string[] { chatId, Guid.Empty.ToString() };
+        if (scopeIds != null && scopeIds.Length > 0)
         {
-            filter.ByTag(MemoryTags.TagMemory, memoryName);
+            fullScopeIds = fullScopeIds.Concat(scopeIds).ToArray();
+        }
+
+        // create a filter for each scopeId
+        for (int i = 0; i < fullScopeIds.Length; i++)
+        {
+            filter.ByTag(MemoryTags.TagScopeId, fullScopeIds[i])
+                  .ByTag(MemoryTags.TagMemory, memoryName ?? string.Empty);
         }
 
         var searchResult =

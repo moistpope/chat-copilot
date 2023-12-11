@@ -6,11 +6,13 @@ using System.ComponentModel;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using CopilotChat.WebApi.Auth;
 using CopilotChat.WebApi.Extensions;
 using CopilotChat.WebApi.Models.Storage;
 using CopilotChat.WebApi.Options;
 using CopilotChat.WebApi.Plugins.Utils;
 using CopilotChat.WebApi.Storage;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.KernelMemory;
@@ -63,7 +65,8 @@ public class SemanticMemoryRetriever
     public async Task<(string, IDictionary<string, CitationSource>)> QueryMemoriesAsync(
         [Description("Query to match.")] string query,
         [Description("Scope ID (user, chat, group) to match history from")] string chatId,
-        [Description("Maximum number of tokens")] int tokenLimit)
+        [Description("Maximum number of tokens")] int tokenLimit,
+        [FromServices] IAuthInfo authInfo)
     {
         ChatSession? chatSession = null;
         if (!await this._chatSessionRepository.TryFindByIdAsync(chatId, callback: v => chatSession = v))
@@ -72,6 +75,7 @@ public class SemanticMemoryRetriever
         }
 
         var remainingToken = tokenLimit;
+        var userGroups = authInfo.UserGroups;
 
         // Search for relevant memories.
         List<(Citation Citation, Citation.Partition Memory)> relevantMemories = new();
@@ -81,7 +85,7 @@ public class SemanticMemoryRetriever
             tasks.Add(SearchMemoryAsync(memoryName));
         }
         // Global document memory.
-        tasks.Add(SearchMemoryAsync(this._promptOptions.DocumentMemoryName, isGlobalMemory: true));
+        tasks.Add(SearchMemoryAsync(this._promptOptions.DocumentMemoryName, userGroups, true));
         // Wait for all tasks to complete.
         await Task.WhenAll(tasks);
 
@@ -144,7 +148,7 @@ public class SemanticMemoryRetriever
         /// <summary>
         /// Search the memory for relevant memories by memory name.
         /// </summary>
-        async Task SearchMemoryAsync(string memoryName, bool isGlobalMemory = false)
+        async Task SearchMemoryAsync(string memoryName, IEnumerable<string>? scopeIds = null, bool isGlobalMemory = false)
         {
             var searchResult =
                 await this._memoryClient.SearchMemoryAsync(
@@ -152,6 +156,7 @@ public class SemanticMemoryRetriever
                     query,
                     this.CalculateRelevanceThreshold(memoryName, chatSession!.MemoryBalance),
                     isGlobalMemory ? DocumentMemoryOptions.GlobalDocumentChatId.ToString() : chatId,
+                    scopeIds?.ToArray(),
                     memoryName);
 
             foreach (var result in searchResult.Results.SelectMany(c => c.Partitions.Select(p => (c, p))))

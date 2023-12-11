@@ -81,7 +81,6 @@ public class ChatController : ControllerBase, IDisposable
     /// <param name="kernel">Semantic kernel obtained through dependency injection.</param>
     /// <param name="messageRelayHubContext">Message Hub that performs the real time relay service.</param>
     /// <param name="planner">Planner to use to create function sequences.</param>
-    /// <param name="askConverter">Converter to use for converting Asks.</param>
     /// <param name="chatSessionRepository">Repository of chat sessions.</param>
     /// <param name="chatParticipantRepository">Repository of chat participants.</param>
     /// <param name="authInfo">Auth info for the current request.</param>
@@ -99,7 +98,6 @@ public class ChatController : ControllerBase, IDisposable
         [FromServices] IKernel kernel,
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
         [FromServices] CopilotChatPlanner planner,
-        [FromServices] AskConverter askConverter,
         [FromServices] ChatSessionRepository chatSessionRepository,
         [FromServices] ChatParticipantRepository chatParticipantRepository,
         [FromServices] IAuthInfo authInfo,
@@ -108,7 +106,7 @@ public class ChatController : ControllerBase, IDisposable
     {
         this._logger.LogDebug("Chat message received.");
 
-        return await this.HandleRequest(ChatFunctionName, kernel, messageRelayHubContext, planner, askConverter, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
+        return await this.HandleRequest(ChatFunctionName, kernel, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
     }
 
     /// <summary>
@@ -117,7 +115,6 @@ public class ChatController : ControllerBase, IDisposable
     /// <param name="kernel">Semantic kernel obtained through dependency injection.</param>
     /// <param name="messageRelayHubContext">Message Hub that performs the real time relay service.</param>
     /// <param name="planner">Planner to use to create function sequences.</param>
-    /// <param name="askConverter">Converter to use for converting Asks.</param>
     /// <param name="chatSessionRepository">Repository of chat sessions.</param>
     /// <param name="chatParticipantRepository">Repository of chat participants.</param>
     /// <param name="authInfo">Auth info for the current request.</param>
@@ -135,7 +132,6 @@ public class ChatController : ControllerBase, IDisposable
         [FromServices] IKernel kernel,
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
         [FromServices] CopilotChatPlanner planner,
-        [FromServices] AskConverter askConverter,
         [FromServices] ChatSessionRepository chatSessionRepository,
         [FromServices] ChatParticipantRepository chatParticipantRepository,
         [FromServices] IAuthInfo authInfo,
@@ -144,7 +140,7 @@ public class ChatController : ControllerBase, IDisposable
     {
         this._logger.LogDebug("plan request received.");
 
-        return await this.HandleRequest(ProcessPlanFunctionName, kernel, messageRelayHubContext, planner, askConverter, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
+        return await this.HandleRequest(ProcessPlanFunctionName, kernel, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
     }
 
     /// <summary>
@@ -154,7 +150,6 @@ public class ChatController : ControllerBase, IDisposable
     /// <param name="kernel">Semantic kernel obtained through dependency injection.</param>
     /// <param name="messageRelayHubContext">Message Hub that performs the real time relay service.</param>
     /// <param name="planner">Planner to use to create function sequences.</param>
-    /// <param name="askConverter">Converter to use for converting Asks.</param>
     /// <param name="chatSessionRepository">Repository of chat sessions.</param>
     /// <param name="chatParticipantRepository">Repository of chat participants.</param>
     /// <param name="authInfo">Auth info for the current request.</param>
@@ -166,7 +161,6 @@ public class ChatController : ControllerBase, IDisposable
        IKernel kernel,
        IHubContext<MessageRelayHub> messageRelayHubContext,
        CopilotChatPlanner planner,
-       AskConverter askConverter,
        ChatSessionRepository chatSessionRepository,
        ChatParticipantRepository chatParticipantRepository,
        IAuthInfo authInfo,
@@ -174,7 +168,7 @@ public class ChatController : ControllerBase, IDisposable
        string chatId)
     {
         // Put ask's variables in the context we will use.
-        var contextVariables = askConverter.GetContextVariables(ask);
+        var contextVariables = GetContextVariables(ask, authInfo, chatId);
 
         // Verify that the chat exists and that the user has access to it.
         ChatSession? chat = null;
@@ -338,12 +332,14 @@ public class ChatController : ControllerBase, IDisposable
 
                         // TODO: [Issue #44] Support other forms of auth. Currently, we only support user PAT or no auth.
                         var requiresAuth = !plugin.AuthType.Equals("none", StringComparison.OrdinalIgnoreCase);
+#pragma warning disable IDE0039 // Use local function
                         OpenAIAuthenticateRequestAsyncCallback authCallback = (request, _, _) =>
                         {
                             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", PluginAuthValue);
 
                             return Task.CompletedTask;
                         };
+#pragma warning restore IDE0039 // Use local function
 
                         await planner.Kernel.ImportOpenAIPluginFunctionsAsync(
                             $"{plugin.NameForModel}Plugin",
@@ -392,12 +388,14 @@ public class ChatController : ControllerBase, IDisposable
             {
                 this._logger.LogDebug("Enabling hosted plugin {0}.", plugin.Name);
 
+#pragma warning disable IDE0039 // Use local function
                 OpenAIAuthenticateRequestAsyncCallback authCallback = (request, _, _) =>
                 {
                     request.Headers.Add("X-Functions-Key", plugin.Key);
 
                     return Task.CompletedTask;
                 };
+#pragma warning restore IDE0039 // Use local function
 
                 // Register the ChatGPT plugin with the planner's kernel.
                 await planner.Kernel.ImportOpenAIPluginFunctionsAsync(
@@ -417,6 +415,25 @@ public class ChatController : ControllerBase, IDisposable
         }
 
         return;
+    }
+
+    private static ContextVariables GetContextVariables(Ask ask, IAuthInfo authInfo, string chatId)
+    {
+        const string UserIdKey = "userId";
+        const string UserNameKey = "userName";
+        const string ChatIdKey = "chatId";
+
+        var contextVariables = new ContextVariables(ask.Input);
+        foreach (var variable in ask.Variables)
+        {
+            contextVariables.Set(variable.Key, variable.Value);
+        }
+
+        contextVariables.Set(UserIdKey, authInfo.UserId);
+        contextVariables.Set(UserNameKey, authInfo.Name);
+        contextVariables.Set(ChatIdKey, chatId);
+
+        return contextVariables;
     }
 
     /// <summary>

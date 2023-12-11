@@ -152,6 +152,7 @@ public class ChatArchiveController : ControllerBase
                 query: "*", // dummy query since we don't care about relevance. An empty string will cause exception.
                 relevanceThreshold: -1, // no relevance required since the collection only has one entry
                 chatId,
+                null,
                 memoryName,
                 cancellationToken);
 

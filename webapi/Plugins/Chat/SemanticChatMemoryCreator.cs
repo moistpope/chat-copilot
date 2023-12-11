@@ -18,7 +18,6 @@ namespace CopilotChat.WebApi.Plugins.Chat;
 /// </summary>
 public static class SemanticChatMemoryCreator
 {
-
     /// <summary>
     /// Extract and save kernel memory.
     /// </summary>
@@ -78,6 +77,7 @@ public static class SemanticChatMemoryCreator
                         options.SemanticMemoryRelevanceUpper,
                         resultCount: 1,
                         chatId,
+                        null,
                         memoryName,
                         cancellationToken);
 

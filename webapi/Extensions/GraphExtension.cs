@@ -93,8 +93,10 @@ public class GraphExtension
     public async Task<byte[]> GetUserProfilePictureAsync(string userId)
     {
         var stream = await this._graphClient.Users[userId].Photo.Content.Request().GetAsync();
+        // use the 'Stream.ReadAsync(Memory<byte>, CancellationToken)' overload
         var buffer = new byte[stream.Length];
-        await stream.ReadAsync(buffer, 0, (int)stream.Length);
+        await stream.ReadAsync(buffer, cancellationToken: default);
+
         return buffer;
     }
 
@@ -111,7 +113,7 @@ public class GraphExtension
         {
             var stream = await this._graphClient.Users[userId].Photo.Content.Request().GetAsync();
             var buffer = new byte[stream.Length];
-            await stream.ReadAsync(buffer, 0, (int)stream.Length);
+            await stream.ReadAsync(buffer, cancellationToken: default);
             result.Add(userId, buffer);
         }
 

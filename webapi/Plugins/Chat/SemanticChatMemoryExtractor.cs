@@ -103,7 +103,6 @@ internal static class SemanticChatMemoryExtractor
             // cleanedResult = cleanedResult.Substring(0, cleanedResult.Length - 4);
             var cleanedResult = result.ToString();
 
-
             // Get token usage from ChatCompletion result and add to context
             // Since there are multiple memory types, total token usage is calculated by cumulating the token usage of each memory type.
             TokenUtils.GetFunctionTokenUsage(result, context, logger, $"SystemCognitive_{memoryType}");
@@ -132,6 +131,7 @@ internal static class SemanticChatMemoryExtractor
                         options.SemanticMemoryRelevanceUpper,
                         resultCount: 1,
                         chatId,
+                        null,
                         memoryName,
                         cancellationToken);
 
