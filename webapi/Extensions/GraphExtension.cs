@@ -17,10 +17,15 @@ namespace CopilotChat.WebApi.Extensions;
 public class GraphExtension
 {
     // class instance of GraphServiceClient that is created when class is initialized with a token
-    private readonly GraphServiceClient _graphClient;
+    private readonly GraphServiceClient? _graphClient;
 
     public GraphExtension(IAuthenticationProvider authenticationProvider)
     {
+        if (authenticationProvider is null)
+        {
+            return;
+        }
+
         ArgumentNullException.ThrowIfNull(authenticationProvider, nameof(authenticationProvider));
         // this._logger.LogInformation("Enabling Microsoft Graph plugin(s).");
         IList<DelegatingHandler> graphMiddlewareHandlers = GraphClientFactory.CreateDefaultHandlers(authenticationProvider);
@@ -34,7 +39,7 @@ public class GraphExtension
     {
         if (token.IsNullOrEmpty())
         {
-            throw new ArgumentNullException(nameof(token));
+            return;
         }
         // this._logger.LogInformation("Enabling Microsoft Graph plugin(s).");
         BearerAuthenticationProvider authenticationProvider = new(() => Task.FromResult(token));
@@ -55,6 +60,11 @@ public class GraphExtension
     /// <returns>The user's profile information.</returns>
     public async Task<User> GetUserProfileAsync(string userId)
     {
+        if (this._graphClient is null)
+        {
+            throw new InvalidOperationException("Graph client is not initialized.");
+        }
+
         return await this._graphClient.Users[userId].Request().GetAsync();
     }
 
@@ -67,6 +77,11 @@ public class GraphExtension
     /// <returns>The user's groups.</returns>
     public async Task<IEnumerable<Group>?> GetUserGroupsAsync(string userId)
     {
+        if (this._graphClient is null)
+        {
+            return null;
+        }
+
         var groups = await this._graphClient.Users[userId].MemberOf.Request().Select("id,displayName").GetAsync();
         var result = new List<Group>();
         var page = groups;
@@ -92,6 +107,11 @@ public class GraphExtension
     /// <returns>The user's profile picture.</returns>
     public async Task<byte[]> GetUserProfilePictureAsync(string userId)
     {
+        if (this._graphClient is null)
+        {
+            throw new InvalidOperationException("Graph client is not initialized.");
+        }
+
         var stream = await this._graphClient.Users[userId].Photo.Content.Request().GetAsync();
         // use the 'Stream.ReadAsync(Memory<byte>, CancellationToken)' overload
         var buffer = new byte[stream.Length];
@@ -108,6 +128,11 @@ public class GraphExtension
     /// <returns>The user's profile picture.</returns>
     public async Task<Dictionary<string, byte[]>> GetUserProfilePicturesAsync(IEnumerable<string> userIds)
     {
+        if (this._graphClient is null)
+        {
+            throw new InvalidOperationException("Graph client is not initialized.");
+        }
+
         var result = new Dictionary<string, byte[]>();
         foreach (var userId in userIds)
         {

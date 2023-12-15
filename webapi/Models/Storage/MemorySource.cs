@@ -85,7 +85,7 @@ public class MemorySource : IStorageEntity
     /// The partition key for the source.
     /// </summary>
     [JsonIgnore]
-    public string Partition => this.CreatedBy;
+    public string Partition => Guid.Empty.ToString();
 
     /// <summary>
     /// Empty constructor for serialization.

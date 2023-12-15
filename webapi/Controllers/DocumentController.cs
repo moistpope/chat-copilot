@@ -20,6 +20,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Graph;
 using Microsoft.KernelMemory;
 
 namespace CopilotChat.WebApi.Controllers;
@@ -125,7 +126,7 @@ public class DocumentController : ControllerBase
     {
         try
         {
-            await this.ValidateDocumentImportFormAsync(this._authInfo.UserId, documentImportForm);
+            await this.ValidateDocumentImportFormAsync(this._authInfo.UserId, documentImportForm, chatId);
         }
         catch (ArgumentException ex)
         {
@@ -136,6 +137,8 @@ public class DocumentController : ControllerBase
 
         // Pre-create chat-message
         DocumentMessageContent documentMessageContent = new();
+
+        documentImportForm.ScopeIds = documentImportForm.ScopeIds.Append(chatId).Append(this._authInfo.UserId)!;
 
         var importResults = await this.ImportDocumentsAsync(memoryClient, documentImportForm, documentMessageContent);
 
@@ -186,7 +189,7 @@ public class DocumentController : ControllerBase
         await Task.WhenAll(
             documentImportForm.FormFiles.Select(
                 async formFile =>
-                    await this.ImportDocumentAsync(formFile, memoryClient, (string[])documentImportForm.ScopeIds, this._authInfo.UserId).ContinueWith(
+                    await this.ImportDocumentAsync(formFile, memoryClient, documentImportForm.ScopeIds.ToArray(), this._authInfo.UserId).ContinueWith(
                         task =>
                         {
                             var importResult = task.Result;
@@ -220,14 +223,14 @@ public class DocumentController : ControllerBase
             hyperlink: null
         );
 
-        if (!(await this.TryUpsertMemorySourceAsync(memorySource)))
-        {
-            this._logger.LogDebug("Failed to upsert memory source for file {0}.", formFile.FileName);
+        // if (!await this.TryUpsertMemorySourceAsync(memorySource))
+        // {
+        //     this._logger.LogDebug("Failed to upsert memory source for file {0}.", formFile.FileName);
 
-            return ImportResult.Fail;
-        }
+        //     return ImportResult.Fail;
+        // }
 
-        if (!(await TryStoreMemoryAsync()))
+        if (!await TryStoreMemoryAsync())
         {
             await this.TryRemoveMemoryAsync(memorySource);
         }

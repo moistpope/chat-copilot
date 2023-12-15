@@ -312,14 +312,14 @@ export const useChat = () => {
         return [];
     };
 
-    const importDocument = async (chatId: string, files: File[], uploadToGlobal: boolean) => {
+    const importDocument = async (chatId: string, files: File[], uploadToChatOnly: boolean) => {
         try {
             await documentImportService.importDocumentAsync(
                 chatId,
                 files,
                 features[FeatureKeys.AzureContentSafety].enabled,
                 await AuthHelper.getSKaaSAccessToken(instance, inProgress),
-                uploadToGlobal,
+                uploadToChatOnly,
             );
         } catch (e: any) {
             let errorDetails = getErrorDetails(e);

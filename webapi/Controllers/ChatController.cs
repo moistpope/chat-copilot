@@ -172,12 +172,12 @@ public class ChatController : ControllerBase, IDisposable
 
         // Verify that the chat exists and that the user has access to it.
         ChatSession? chat = null;
-        if (!(await chatSessionRepository.TryFindByIdAsync(chatId, callback: c => chat = c)))
+        if (!await chatSessionRepository.TryFindByIdAsync(chatId, callback: c => chat = c))
         {
             return this.NotFound("Failed to find chat session for the chatId specified in variables.");
         }
 
-        if (!(await chatParticipantRepository.IsUserInChatAsync(authInfo.UserId, chatId)))
+        if (!await chatParticipantRepository.IsUserInChatAsync(authInfo.UserId, chatId))
         {
             return this.Forbid("User does not have access to the chatId specified in variables.");
         }

@@ -10,7 +10,7 @@ export class DocumentImportService extends BaseService {
         documents: File[],
         useContentSafety: boolean,
         accessToken: string,
-        uploadToGlobal: boolean,
+        uploadToChatOnly: boolean,
     ) => {
         const formData = new FormData();
         formData.append('useContentSafety', useContentSafety.toString());
@@ -20,7 +20,7 @@ export class DocumentImportService extends BaseService {
 
         return await this.getResponseAsync<IChatMessage>(
             {
-                commandPath: uploadToGlobal ? `documents` : `chats/${chatId}/documents`,
+                commandPath: uploadToChatOnly ? `chats/${chatId}/documents` : `documents`,
                 method: 'POST',
                 body: formData,
             },

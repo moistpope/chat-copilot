@@ -109,6 +109,7 @@ export const DocumentsTab: React.FC = () => {
                       return {
                           id: `in-progress-${index}`,
                           chatId: selectedId,
+                          scopeIds: [],
                           sourceType: 'N/A',
                           name: document,
                           sharedBy: 'N/A',

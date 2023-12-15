@@ -100,6 +100,11 @@ public class ChatPlugin
     private readonly AzureContentSafety? _contentSafety = null;
 
     /// <summary>
+    /// Authentication information
+    /// </summary>
+    private readonly AuthInfo _authInfo;
+
+    /// <summary>
     /// Create a new instance of <see cref="ChatPlugin"/>.
     /// </summary>
     public ChatPlugin(
@@ -112,6 +117,7 @@ public class ChatPlugin
         IOptions<PromptsOptions> promptOptions,
         IOptions<DocumentMemoryOptions> documentImportOptions,
         CopilotChatPlanner planner,
+        AuthInfo authInfo,
         ILogger logger,
         AzureContentSafety? contentSafety = null)
     {
@@ -122,6 +128,7 @@ public class ChatPlugin
         this._chatSessionRepository = chatSessionRepository;
         this._chatParticipantRepository = chatParticipantRepository;
         this._messageRelayHubContext = messageRelayHubContext;
+        this._authInfo = authInfo;
         // Clone the prompt options to avoid modifying the original prompt options.
         this._promptOptions = promptOptions.Value.Copy();
 
@@ -329,7 +336,6 @@ public class ChatPlugin
         [Description("Name of the user")] string userName,
         [Description("Unique and persistent identifier for the chat")] string chatId,
         [Description("Type of the message")] string messageType,
-        [FromServices] IAuthInfo authInfo,
         SKContext context,
         CancellationToken cancellationToken = default)
     {
@@ -343,9 +349,9 @@ public class ChatPlugin
         List<string> semanticMemories = new();
 
         // add AuthInfo.GraphExtension.GetUserProfileAsync to semantic memories
-        if (authInfo.GraphExtension != null)
+        if (this._authInfo.GraphExtension != null)
         {
-            var userInfo = await authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
+            var userInfo = await this._authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
             semanticMemories.Add(userInfo.ToString() ?? string.Empty);
         }
 
@@ -361,7 +367,7 @@ public class ChatPlugin
         var chatContext = context.Clone();
         chatContext.Variables.Set("knowledgeCutoff", this._promptOptions.KnowledgeCutoffDate);
 
-        CopilotChatMessage chatMessage = await this.GetChatResponseAsync(chatId, userId, chatContext, newUserMessage, authInfo, cancellationToken);
+        CopilotChatMessage chatMessage = await this.GetChatResponseAsync(chatId, userId, chatContext, newUserMessage, this._authInfo, cancellationToken);
         context.Variables.Update(chatMessage.Content);
 
         if (chatMessage.TokenUsage != null)
@@ -622,7 +628,7 @@ public class ChatPlugin
                 accessibleScopeIds.Add(userId);
                 accessibleScopeIds = authInfo.UserGroups?.ToList();
                 break;
-            case int n when (n > 1 && n < 10):
+            case int n when n > 1 && n < 10:
                 var graphClient = authInfo.GraphExtension;
                 if (graphClient == null)
                 {
@@ -635,7 +641,7 @@ public class ChatPlugin
                 }
                 accessibleScopeIds?.AddRange(scopeIdsLists.Aggregate((prev, next) => prev!.Intersect(next!))?.ToList()?.Distinct() ?? new List<string>());
                 break;
-            case int n when (n >= 10):
+            case int n when n >= 10:
                 break;
             default:
                 break;
