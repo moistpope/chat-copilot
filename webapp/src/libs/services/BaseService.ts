@@ -43,8 +43,6 @@ export class BaseService {
         }
 
         if (enabledPlugins && enabledPlugins.length > 0) {
-            // For each enabled plugin, pass its auth information as a customer header
-            // to the backend so the server can authenticate to the plugin
             for (const plugin of enabledPlugins) {
                 headers.append(`x-sk-copilot-${plugin.headerTag}-auth`, plugin.authData ?? '');
             }
@@ -56,6 +54,7 @@ export class BaseService {
                 requestUrl.search = `?${query.toString()}`;
             }
 
+            // send cookies for all requests
             const response = await fetch(requestUrl, {
                 method: method ?? 'GET',
                 body: isFormData ? body : JSON.stringify(body),

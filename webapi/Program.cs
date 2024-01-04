@@ -66,7 +66,8 @@ public sealed class Program
             .AddLogging(logBuilder => logBuilder.AddApplicationInsights())
             .AddSingleton<ITelemetryService, AppInsightsTelemetryService>();
 
-        TelemetryDebugWriter.IsTracingDisabled = Debugger.IsAttached;
+        // TelemetryDebugWriter.IsTracingDisabled = Debugger.IsAttached;
+        TelemetryDebugWriter.IsTracingDisabled = false;
 
         // Add named HTTP clients for IHttpClientFactory
         builder.Services.AddHttpClient();

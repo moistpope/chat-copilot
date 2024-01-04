@@ -96,16 +96,16 @@ export enum FeatureKeys {
     AzureCognitiveSearch,
     BotAsDocs,
     MultiUserChat,
-    RLHF, // Reinforcement Learning from Human Feedback
+    RLHF,
 }
 
 export const Features = {
     [FeatureKeys.DarkMode]: {
-        enabled: false,
+        enabled: true,
         label: 'Dark Mode',
     },
     [FeatureKeys.SimplifiedExperience]: {
-        enabled: true,
+        enabled: false,
         label: 'Simplified Chat Experience',
     },
     [FeatureKeys.PluginsPlannersAndPersonas]: {
@@ -119,9 +119,9 @@ export const Features = {
         inactive: true,
     },
     [FeatureKeys.AzureCognitiveSearch]: {
-        enabled: false,
+        enabled: true,
         label: 'Azure Cognitive Search',
-        inactive: true,
+        inactive: false,
     },
     [FeatureKeys.BotAsDocs]: {
         enabled: false,
@@ -133,7 +133,7 @@ export const Features = {
         description: 'Enable multi-user chat sessions. Not available when authorization is disabled.',
     },
     [FeatureKeys.RLHF]: {
-        enabled: false,
+        enabled: true,
         label: 'Reinforcement Learning from Human Feedback',
         description: 'Enable users to vote on model-generated responses. For demonstration purposes only.',
         // TODO: [Issue #42] Send and store feedback in backend

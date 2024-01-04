@@ -62,7 +62,8 @@ public class AuthInfo : IAuthInfo
 
             return new AuthData
             {
-                UserId = (tenantIdClaim is null) ? userIdClaim.Value : string.Join(".", userIdClaim.Value, tenantIdClaim.Value),
+                // UserId = (tenantIdClaim is null) ? userIdClaim.Value : string.Join(".", userIdClaim.Value, tenantIdClaim.Value),
+                UserId = userIdClaim.Value,
                 UserName = userNameClaim.Value,
             };
         }, isThreadSafe: false);

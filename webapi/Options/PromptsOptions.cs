@@ -95,6 +95,8 @@ public class PromptsOptions
 
     internal string SystemIntentExtraction => string.Join("\n", this.SystemIntentPromptComponents);
 
+    [Required, NotEmptyOrWhitespace] public string SystemRAG { get; set; } = string.Empty;
+
     // Intent extraction
     [Required, NotEmptyOrWhitespace] public string SystemIntent { get; set; } = string.Empty;
     [Required, NotEmptyOrWhitespace] public string SystemIntentContinuation { get; set; } = string.Empty;

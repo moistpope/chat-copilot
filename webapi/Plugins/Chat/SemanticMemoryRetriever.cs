@@ -13,9 +13,13 @@ using CopilotChat.WebApi.Options;
 using CopilotChat.WebApi.Plugins.Utils;
 using CopilotChat.WebApi.Storage;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Cosmos.Linq;
+using Microsoft.Extensions.Azure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.KernelMemory;
+using Microsoft.SemanticKernel;
 
 namespace CopilotChat.WebApi.Plugins.Chat;
 
@@ -62,8 +66,10 @@ public class SemanticMemoryRetriever
     /// Query relevant memories based on the query.
     /// </summary>
     /// <returns>A string containing the relevant memories.</returns>
+    [SKFunction]
+    [Description("Search knowledge base for information")]
     public async Task<(string, IDictionary<string, CitationSource>)> QueryMemoriesAsync(
-        [Description("Query to match.")] string query,
+        [Description("Search query in natural language")] string query,
         [Description("Scope ID (user, chat, group) to match history from")] string chatId,
         [Description("Maximum number of tokens")] int tokenLimit,
         [FromServices] IAuthInfo authInfo)
@@ -77,17 +83,19 @@ public class SemanticMemoryRetriever
         var remainingToken = tokenLimit;
         var userGroups = authInfo.UserGroups;
 
+        var scopeIds = new List<string> { chatId, authInfo.UserId };
+        if (!authInfo.UserGroups.IsNullOrEmpty()) { scopeIds.AddRange(authInfo.UserGroups!); };
+
         // Search for relevant memories.
         List<(Citation Citation, Citation.Partition Memory)> relevantMemories = new();
-        List<Task> tasks = new();
         foreach (var memoryName in this._memoryNames)
         {
-            tasks.Add(SearchMemoryAsync(memoryName));
+            relevantMemories.AddRange(await this.SearchMemoryAsync(query, memoryName, chatId, scopeIds, isGlobalMemory: true, chatSession: chatSession));
         }
         // Global document memory.
-        tasks.Add(SearchMemoryAsync(this._promptOptions.DocumentMemoryName, userGroups, true));
+        // relevantMemories.AddRange(await this.SearchMemoryAsync(query, this._promptOptions.DocumentMemoryName, chatId, isGlobalMemory: true, chatSession: chatSession));
         // Wait for all tasks to complete.
-        await Task.WhenAll(tasks);
+        // await Task.WhenAll(tasks);
 
         var builderMemory = new StringBuilder();
         IDictionary<string, CitationSource> citationMap = new Dictionary<string, CitationSource>(StringComparer.OrdinalIgnoreCase);
@@ -146,26 +154,6 @@ public class SemanticMemoryRetriever
         return (builderMemory.Length == 0 ? string.Empty : builderMemory.ToString(), citationMap);
 
         /// <summary>
-        /// Search the memory for relevant memories by memory name.
-        /// </summary>
-        async Task SearchMemoryAsync(string memoryName, IEnumerable<string>? scopeIds = null, bool isGlobalMemory = false)
-        {
-            var searchResult =
-                await this._memoryClient.SearchMemoryAsync(
-                    this._promptOptions.MemoryIndexName,
-                    query,
-                    this.CalculateRelevanceThreshold(memoryName, chatSession!.MemoryBalance),
-                    isGlobalMemory ? DocumentMemoryOptions.GlobalDocumentChatId.ToString() : chatId,
-                    scopeIds?.ToArray(),
-                    memoryName);
-
-            foreach (var result in searchResult.Results.SelectMany(c => c.Partitions.Select(p => (c, p))))
-            {
-                relevantMemories.Add(result);
-            }
-        }
-
-        /// <summary>
         /// Process the relevant memories and return a map of memories with citations for each memory name.
         /// </summary>
         /// <returns>A map of memories for each memory name and a map of citations for documents.</returns>
@@ -173,6 +161,12 @@ public class SemanticMemoryRetriever
         {
             var memoryMap = new Dictionary<string, List<(string, CitationSource)>>(StringComparer.OrdinalIgnoreCase);
             var citationMap = new Dictionary<string, CitationSource>(StringComparer.OrdinalIgnoreCase);
+
+            // remove memories that have duplicate links
+            relevantMemories = relevantMemories
+                .GroupBy(m => m.Memory.Text)
+                .Select(g => g.First())
+                .ToList();
 
             foreach (var result in relevantMemories.OrderByDescending(m => m.Memory.Relevance))
             {
@@ -217,10 +211,44 @@ public class SemanticMemoryRetriever
         }
     }
 
+    /// <summary>
+    /// Search the memory for relevant memories by memory name.
+    /// </summary>
+    public async Task<List<(Citation Citation, Citation.Partition Memory)>> SearchMemoryAsync(string query, string memoryName, string chatId, IEnumerable<string>? scopeIds = null, bool isGlobalMemory = false, ChatSession? chatSession = null)
+    {
+        var relevantMemories = new List<(Citation Citation, Citation.Partition Memory)>();
+
+        if (memoryName != this._promptOptions.DocumentMemoryName)
+        {
+            isGlobalMemory = false;
+        }
+
+        if (isGlobalMemory && scopeIds != null && !scopeIds.Contains(DocumentMemoryOptions.GlobalDocumentChatId.ToString()))
+        {
+            scopeIds = scopeIds.Append(DocumentMemoryOptions.GlobalDocumentChatId.ToString());
+        }
+
+        var searchResult =
+            await this._memoryClient.SearchMemoryAsync(
+                this._promptOptions.MemoryIndexName,
+                query,
+                chatSession != null ? this.CalculateRelevanceThreshold(memoryName, chatSession!.MemoryBalance) : 0.5f,
+                isGlobalMemory ? DocumentMemoryOptions.GlobalDocumentChatId.ToString() : chatId,
+                scopeIds?.ToArray(),
+                memoryName);
+
+        foreach (var result in searchResult.Results.SelectMany(c => c.Partitions.Select(p => (c, p))))
+        {
+            relevantMemories.Add(result);
+        }
+
+        return relevantMemories;
+    }
+
     #region Private
 
     /// <summary>
-    /// Calculates the relevance threshold for the memory.
+    /// Calculates the relevance threshold for the memory..
     /// The relevance threshold is a function of the memory balance.
     /// The memory balance is a value between 0 and 1, where 0 means maximum focus on
     /// working term memory (by minimizing the relevance threshold for working memory

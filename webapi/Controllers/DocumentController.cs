@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using CopilotChat.WebApi.Auth;
 using CopilotChat.WebApi.Extensions;
@@ -20,8 +21,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.Graph;
 using Microsoft.KernelMemory;
+using Microsoft.KernelMemory.DataFormats.Pdf;
 
 namespace CopilotChat.WebApi.Controllers;
 
@@ -84,6 +85,7 @@ public class DocumentController : ControllerBase
     /// </summary>
     [Route("documents")]
     [HttpPost]
+    [RequestSizeLimit(100000000)]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public Task<IActionResult> DocumentImportAsync(
@@ -91,10 +93,13 @@ public class DocumentController : ControllerBase
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
         [FromForm] DocumentImportForm documentImportForm)
     {
+        // print documentImportForm.ScopeIds
+        Console.WriteLine($"documentImportForm.ScopeIds: {string.Join(", ", documentImportForm.ScopeIds)}");
         return this.DocumentImportAsync(
             memoryClient,
             messageRelayHubContext,
-            documentImportForm
+            documentImportForm,
+            null
         );
     }
 
@@ -138,7 +143,24 @@ public class DocumentController : ControllerBase
         // Pre-create chat-message
         DocumentMessageContent documentMessageContent = new();
 
-        documentImportForm.ScopeIds = documentImportForm.ScopeIds.Append(chatId).Append(this._authInfo.UserId)!;
+        this._logger.LogInformation("Testing for zero-length PDF files...");
+
+        foreach (var formFile in documentImportForm.FormFiles)
+        {
+            if (formFile.FileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var text = new PdfDecoder().DocToText(formFile.OpenReadStream()).ToString().Trim();
+                if (string.IsNullOrWhiteSpace(text) || text.Length == 0)
+                {
+                    this._logger.LogWarning("Zero-length PDF file detected: {0}", formFile.FileName);
+                    documentImportForm.FormFiles = documentImportForm.FormFiles.Where(file => file.FileName != formFile.FileName);
+                }
+            }
+            if (formFile.FileName.EndsWith(".docx", StringComparison.OrdinalIgnoreCase))
+            {
+                this._logger.LogInformation("docx file detected: {0}", formFile.FileName);
+            }
+        }
 
         var importResults = await this.ImportDocumentsAsync(memoryClient, documentImportForm, documentMessageContent);
 
@@ -212,10 +234,14 @@ public class DocumentController : ControllerBase
     {
         this._logger.LogInformation("Importing document {0}", formFile.FileName);
 
+        var fileName = RemoveSpecialCharacters(Path.GetFileNameWithoutExtension(formFile.FileName));
+        var fileExtension = Path.GetExtension(formFile.FileName);
+        var sanitizedFileName = $"{fileName}{fileExtension}";
+
         // Create memory source
         MemorySource memorySource = new(
             scopeIds,
-            formFile.FileName,
+            sanitizedFileName,
             userId,
             MemorySourceType.File,
             userId,
@@ -232,7 +258,8 @@ public class DocumentController : ControllerBase
 
         if (!await TryStoreMemoryAsync())
         {
-            await this.TryRemoveMemoryAsync(memorySource);
+            // await this.TryRemoveMemoryAsync(memorySource);
+            throw new Exception($"Failed to store document {formFile.FileName}.");
         }
 
         return new ImportResult(memorySource.Id);
@@ -248,15 +275,29 @@ public class DocumentController : ControllerBase
                     scopeIds,
                     userId,
                     this._promptOptions.DocumentMemoryName,
-                    formFile.FileName,
+                    sanitizedFileName,
                     stream);
 
                 return true;
             }
-            catch (Exception ex) when (ex is not SystemException)
+            catch (Exception ex)
             {
-                return false;
+                this._logger.LogError(ex, "Failed to store document {0}. Details: {{1}}", formFile.FileName, ex.Message);
+                throw new Exception($"Failed to store document {formFile.FileName}.", ex);
             }
+        }
+
+        static string RemoveSpecialCharacters(string str)
+        {
+            StringBuilder sb = new();
+            foreach (char c in str)
+            {
+                if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c == '_')
+                {
+                    sb.Append(c);
+                }
+            }
+            return sb.ToString();
         }
     }
 
@@ -304,11 +345,11 @@ public class DocumentController : ControllerBase
 
         if (chatId != null)
         {
-            scopeIds = scopeIds.Append(chatId).ToArray();
+            scopeIds = scopeIds.Append(chatId).ToList();
         }
 
         // Make sure the user has access to the chat session if the document is uploaded to a chat session.
-        if (!await this.UserHasAccessToAllScopesAsync(this._authInfo, (string[])scopeIds))
+        if (!await this.UserHasAccessToAllScopesAsync(this._authInfo, scopeIds.ToArray()))
         {
             throw new ArgumentException("User does not have access to the chat session.");
         }

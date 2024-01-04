@@ -9,12 +9,15 @@ import { UserSettingsMenu } from './components/header/UserSettingsMenu';
 import { PluginGallery } from './components/open-api-plugins/PluginGallery';
 import { BackendProbe, ChatView, Error, Loading, Login } from './components/views';
 import { AuthHelper } from './libs/auth/AuthHelper';
+import { TokenHelper } from './libs/auth/TokenHelper';
 import { useChat, useFile, useGraph } from './libs/hooks';
 import { AlertType } from './libs/models/AlertType';
 import { useAppDispatch, useAppSelector } from './redux/app/hooks';
 import { RootState } from './redux/app/store';
 import { FeatureKeys } from './redux/features/app/AppState';
 import { addAlert, setActiveUserInfo, setServiceInfo } from './redux/features/app/appSlice';
+import { BuiltInPlugins, initialState } from './redux/features/plugins/PluginsState';
+import { connectPlugin } from './redux/features/plugins/pluginsSlice';
 import { semanticKernelDarkTheme, semanticKernelLightTheme } from './styles';
 
 export const useClasses = makeStyles({
@@ -89,7 +92,8 @@ const App = () => {
                         .then((user) => {
                             dispatch(
                                 setActiveUserInfo({
-                                    id: `${account.localAccountId}.${account.tenantId}`,
+                                    // id: `${account.localAccountId}.${account.tenantId}`,
+                                    id: account.localAccountId,
                                     email: account.username,
                                     username: account.name ?? account.username,
                                     graphUserData: user.userGraphData ?? undefined,
@@ -138,6 +142,36 @@ const App = () => {
                         dispatch(setServiceInfo(serviceInfo));
                     }
                 }),
+
+                // if MsGraph is enabled, connect it
+                // a promise for the below function
+
+                (async () => {
+                    const name = BuiltInPlugins.MsGraph;
+                    if (initialState.plugins[name].enabled) {
+                        await TokenHelper.getAccessTokenUsingMsal(
+                            inProgress,
+                            instance,
+                            initialState.plugins[name].authRequirements.scopes ?? [],
+                        )
+                            .then((token) => {
+                                dispatch(
+                                    connectPlugin({
+                                        plugin: name,
+                                        accessToken: token,
+                                    }),
+                                );
+                            })
+                            .catch(() => {
+                                dispatch(
+                                    addAlert({
+                                        message: `Failed to connect to ${name}. Check your permissions and try again.`,
+                                        type: AlertType.Error,
+                                    }),
+                                );
+                            });
+                    }
+                })(),
             ]);
         }
 

@@ -12,6 +12,7 @@ using CopilotChat.WebApi.Models.Request;
 using CopilotChat.WebApi.Models.Response;
 using CopilotChat.WebApi.Models.Storage;
 using CopilotChat.WebApi.Options;
+using CopilotChat.WebApi.Plugins.Chat;
 using CopilotChat.WebApi.Plugins.Utils;
 using CopilotChat.WebApi.Storage;
 using Microsoft.AspNetCore.Authorization;
@@ -43,6 +44,8 @@ public class ChatHistoryController : ControllerBase
     private readonly ChatParticipantRepository _participantRepository;
     private readonly ChatMemorySourceRepository _sourceRepository;
     private readonly PromptsOptions _promptOptions;
+
+    private readonly IOptions<PromptsOptions> _promptsOptionsIOptionsRef;
     private readonly IAuthInfo _authInfo;
 
     /// <summary>
@@ -73,6 +76,7 @@ public class ChatHistoryController : ControllerBase
         this._participantRepository = participantRepository;
         this._sourceRepository = sourceRepository;
         this._promptOptions = promptsOptions.Value;
+        this._promptsOptionsIOptionsRef = promptsOptions;
         this._authInfo = authInfo;
     }
 
@@ -239,17 +243,58 @@ public class ChatHistoryController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [Authorize(Policy = AuthPolicyName.RequireChatParticipant)]
-    public async Task<ActionResult<IEnumerable<MemorySource>>> GetSourcesAsync(Guid chatId)
+    public async Task<ActionResult<IEnumerable<MemorySource>>> GetSourcesAsync(
+        Guid chatId)
     {
         this._logger.LogInformation("Get imported sources of chat session {0}", chatId);
 
         if (await this._sessionRepository.TryFindByIdAsync(chatId.ToString()))
         {
-            // TODO: Get groups common to all participants
+            // cast promptOptions to IOptions<PromptsOptions>
 
-            IEnumerable<MemorySource> sources = await this._sourceRepository.FindByChatIdAsync(chatId.ToString());
+            var _semanticMemoryRetriever = new SemanticMemoryRetriever(this._promptsOptionsIOptionsRef, this._sessionRepository, this._memoryClient, this._logger);
+            var query = "*";
+            var scopeIds = new List<string> { chatId.ToString() };
+            var sources = await _semanticMemoryRetriever.SearchMemoryAsync(query, "DocumentMemory", chatId.ToString(), scopeIds, false);
 
-            return this.Ok(sources);
+            sources = sources.GroupBy(x => x.Citation.Link).Select(x => x.First()).ToList();
+
+            var resources = new List<MemorySource>();
+            foreach (var source in sources)
+            {
+                var resource = new MemorySource
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    ScopeIds = new List<string> { chatId.ToString() },
+                    Name = source.Citation.SourceName,
+                    SourceType = 0,
+                    CreatedBy = "",
+                    SharedBy = "",
+                    CreatedOn = source.Memory.LastUpdate,
+                    Size = 0,
+                    HyperLink = new Uri("https://" + source.Citation.Link),
+                };
+                resources.Add(resource);
+            }
+
+            // const items = resources.map((item) => ({
+            // id: item.id,
+            //         chatId: item.chatId,
+            //         name:
+            //             {
+            // label: item.name,
+            //             icon: getFileIconByFileExtension(item.name),
+            //             url: item.hyperlink,
+            //         },
+            //         createdOn:
+            //             {
+            // label: timestampToDateString(item.createdOn),
+            //             timestamp: item.createdOn,
+            //         },
+            //         size: item.size,
+            //     }));
+
+            return this.Ok(resources);
         }
 
         return this.NotFound($"No chat session found for chat id '{chatId}'.");

@@ -21,16 +21,18 @@ public class GraphExtension
 
     public GraphExtension(IAuthenticationProvider authenticationProvider)
     {
-        if (authenticationProvider is null)
-        {
-            return;
-        }
+        // if (authenticationProvider is null)
+        // {
+        //     return;
+        // }
 
         ArgumentNullException.ThrowIfNull(authenticationProvider, nameof(authenticationProvider));
         // this._logger.LogInformation("Enabling Microsoft Graph plugin(s).");
         IList<DelegatingHandler> graphMiddlewareHandlers = GraphClientFactory.CreateDefaultHandlers(authenticationProvider);
 
-        using HttpClient graphHttpClient = GraphClientFactory.Create(graphMiddlewareHandlers);
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        HttpClient graphHttpClient = GraphClientFactory.Create(graphMiddlewareHandlers);
+#pragma warning restore CA2000 // Dispose objects before losing scope
 
         this._graphClient = new(graphHttpClient);
     }
@@ -46,7 +48,9 @@ public class GraphExtension
 
         IList<DelegatingHandler> graphMiddlewareHandlers = GraphClientFactory.CreateDefaultHandlers(new DelegateAuthenticationProvider(authenticationProvider.AuthenticateRequestAsync));
 
-        using HttpClient graphHttpClient = GraphClientFactory.Create(graphMiddlewareHandlers);
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        HttpClient graphHttpClient = GraphClientFactory.Create(graphMiddlewareHandlers);
+#pragma warning restore CA2000 // Dispose objects before losing scope
 
         this._graphClient = new(graphHttpClient);
     }
@@ -65,7 +69,9 @@ public class GraphExtension
             throw new InvalidOperationException("Graph client is not initialized.");
         }
 
-        return await this._graphClient.Users[userId].Request().GetAsync();
+        var userData = await this._graphClient.Users[userId].Request().GetAsync();
+
+        return userData;
     }
 
     // get user groups 

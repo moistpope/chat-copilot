@@ -32,6 +32,7 @@ using Microsoft.SemanticKernel.Orchestration;
 using Microsoft.SemanticKernel.Planning;
 using Microsoft.SemanticKernel.TemplateEngine;
 using Microsoft.SemanticKernel.TemplateEngine.Basic;
+using static Microsoft.SemanticKernel.TemplateEngine.PromptTemplateConfig;
 using ChatCompletionContextMessages = Microsoft.SemanticKernel.AI.ChatCompletion.ChatHistory;
 using CopilotChatMessage = CopilotChat.WebApi.Models.Storage.CopilotChatMessage;
 
@@ -349,11 +350,12 @@ public class ChatPlugin
         List<string> semanticMemories = new();
 
         // add AuthInfo.GraphExtension.GetUserProfileAsync to semantic memories
-        if (this._authInfo.GraphExtension != null)
-        {
-            var userInfo = await this._authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
-            semanticMemories.Add(userInfo.ToString() ?? string.Empty);
-        }
+        // if (this._authInfo.GraphExtension != null)
+        // {
+        // var userInfo = await this._authInfo.GraphExtension.GetUserProfileAsync(userId) ?? new User();
+        // add all properties of userInfo that aren't null to semantic memories
+        // semanticMemories.AddRange(userInfo.GetType().GetProperties().Where(p => p.GetValue(userInfo) != null).Select(p => p.GetValue(userInfo)?.ToString() ?? string.Empty));
+        // }
 
         await SemanticChatMemoryCreator.CreateSemanticChatMemories(
             chatId,
@@ -544,6 +546,46 @@ public class ChatPlugin
     }
 
     /// <summary>
+    /// Modify user message to implement HyDE for more accurate retrieval.
+    /// </summary>
+    /// <param name="chatContext">The SKContext.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The modified user message as a query.</returns>
+    [SKFunction, Description("Modify user message (with context) to implement HyDE for more accurate retrieval")]
+    public async Task<string> HyDEQuery(
+        [Description("Chat ID")] string chatId,
+        [Description("Previous chat context")] SKContext chatContext,
+        CancellationToken cancellationToken = default)
+    {
+        //get chat messages
+        var context = await this.GetAllowedChatHistoryAsync(chatId, this._promptOptions.CompletionTokenLimit, cancellationToken: cancellationToken);
+
+        var completionFunction = this._kernel.CreateSemanticFunction(
+            this._promptOptions.SystemRAG,
+            pluginName: nameof(ChatPlugin),
+            promptTemplateConfig: new PromptTemplateConfig()
+            {
+                Input = new InputConfig()
+                {
+                    Parameters = new List<InputParameter>() {
+                        new() {
+                            Name = "context",
+                            DefaultValue = context
+                        }
+                    }
+                }
+            });
+
+        var result = await completionFunction.InvokeAsync(
+            chatContext,
+            this.CreateIntentCompletionSettings(),
+            cancellationToken
+        );
+
+        return result.ToString();
+    }
+
+    /// <summary>
     /// Generate the necessary chat context to create a prompt then invoke the model to get a response.
     /// </summary>
     /// <param name="chatId">The chat ID</param>
@@ -626,7 +668,7 @@ public class ChatPlugin
                 throw new ArgumentException("No chat participants found.");
             case 1:
                 accessibleScopeIds.Add(userId);
-                accessibleScopeIds = authInfo.UserGroups?.ToList();
+                accessibleScopeIds.AddRange(authInfo.UserGroups?.ToList() ?? new List<string>());
                 break;
             case int n when n > 1 && n < 10:
                 var graphClient = authInfo.GraphExtension;
@@ -647,10 +689,13 @@ public class ChatPlugin
                 break;
         }
 
+        // Modify the query to use HyDE for more accurate retrieval
+        var query = await this.HyDEQuery(chatId, chatContext, cancellationToken);
+
         // Query relevant semantic and document memories
-        await this.UpdateBotResponseStatusOnClientAsync(chatId, "Extracting semantic and document memories", cancellationToken);
+        await this.UpdateBotResponseStatusOnClientAsync(chatId, "Retrieving semantic and document memories", cancellationToken);
         var chatMemoriesTokenLimit = (int)(remainingTokenBudget * this._promptOptions.MemoriesResponseContextWeight);
-        (var memoryText, var citationMap) = await this._semanticMemoryRetriever.QueryMemoriesAsync(userIntent, chatId, chatMemoriesTokenLimit, authInfo);
+        (var memoryText, var citationMap) = await this._semanticMemoryRetriever.QueryMemoriesAsync(query, chatId, chatMemoriesTokenLimit, authInfo);
 
         if (!string.IsNullOrWhiteSpace(memoryText))
         {
@@ -738,16 +783,16 @@ public class ChatPlugin
         await this._chatMessageRepository.UpsertAsync(chatMessage!);
 
         // Extract semantic chat memory
-        await this.UpdateBotResponseStatusOnClientAsync(chatId, "Generating semantic chat memory", cancellationToken);
-        await AsyncUtils.SafeInvokeAsync(
-            () => SemanticChatMemoryExtractor.ExtractSemanticChatMemoryAsync(
-                chatId,
-                this._memoryClient,
-                this._kernel,
-                chatContext,
-                this._promptOptions,
-                this._logger,
-                cancellationToken), nameof(SemanticChatMemoryExtractor.ExtractSemanticChatMemoryAsync));
+        // await this.UpdateBotResponseStatusOnClientAsync(chatId, "Generating semantic chat memory", cancellationToken);
+        // await AsyncUtils.SafeInvokeAsync(
+        //     () => SemanticChatMemoryExtractor.ExtractSemanticChatMemoryAsync(
+        //         chatId,
+        //         this._memoryClient,
+        //         this._kernel,
+        //         chatContext,
+        //         this._promptOptions,
+        //         this._logger,
+        //         cancellationToken), nameof(SemanticChatMemoryExtractor.ExtractSemanticChatMemoryAsync));
 
         // Calculate total token usage for dependency functions and prompt template
         await this.UpdateBotResponseStatusOnClientAsync(chatId, "Calculating token usage", cancellationToken);

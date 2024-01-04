@@ -96,8 +96,11 @@ public class ExternalInformationPlugin
             return string.Empty;
         }
 
+        // remove '.GetEmailMessages' from functions list
+        functions = functions.Where(f => !f.Name.Contains("SendEmail", StringComparison.OrdinalIgnoreCase)).ToList();
+
         var contextString = this.GetChatContextString(context);
-        var goal = $"Given the following context, accomplish the user intent.\nContext:\n{contextString}\n{userIntent}";
+        var goal = $"Given the following context, accomplish the user intent. Only use functions absolutely necessary to complete the user's request. Only act if action needs to be performed. If the user is just looking for information, that's in a later step.\nContext:\n{contextString}\n{userIntent}";
 
         // Run stepwise planner if PlannerOptions.Type == Stepwise
         if (this._planner.PlannerOptions?.Type == PlanType.Stepwise)
@@ -222,12 +225,14 @@ public class ExternalInformationPlugin
     private async Task<string> RunStepwisePlannerAsync(string goal, SKContext context, CancellationToken cancellationToken)
     {
         var plannerContext = context.Clone();
-        var functionResult = await this._planner.RunStepwisePlannerAsync(goal, context, cancellationToken);
+        var functionResult = await this._planner.RunStepwisePlannerAsync(goal, plannerContext, cancellationToken);
 
         // Populate the execution metadata.
         var plannerResult = functionResult.GetValue<string>()?.Trim() ?? string.Empty;
+        plannerContext.Variables.Set("stepsTaken", functionResult.Metadata["stepsTaken"].ToString());
+        plannerContext.Variables.Set("pluginCount", functionResult.Metadata["functionCount"].ToString());
         this.StepwiseThoughtProcess = new PlanExecutionMetadata(
-            plannerContext.Variables["stepsTaken"],
+            plannerContext.Variables["stepsTaken"] ?? string.Empty,
             plannerContext.Variables["timeTaken"],
             plannerContext.Variables["pluginCount"],
             plannerResult);

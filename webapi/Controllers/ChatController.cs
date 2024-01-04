@@ -18,6 +18,9 @@ using CopilotChat.WebApi.Models.Response;
 using CopilotChat.WebApi.Models.Storage;
 using CopilotChat.WebApi.Options;
 using CopilotChat.WebApi.Plugins.Chat;
+using CopilotChat.WebApi.Plugins.Retriever;
+using CopilotChat.WebApi.Plugins.Retriever.Document;
+using CopilotChat.WebApi.Plugins.Retriever.Document.Connectors;
 using CopilotChat.WebApi.Services;
 using CopilotChat.WebApi.Storage;
 using CopilotChat.WebApi.Utilities;
@@ -27,6 +30,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Graph;
+using Microsoft.KernelMemory;
 using Microsoft.SemanticKernel;
 using Microsoft.SemanticKernel.Diagnostics;
 using Microsoft.SemanticKernel.Functions.OpenAPI.Authentication;
@@ -51,6 +55,7 @@ public class ChatController : ControllerBase, IDisposable
     private readonly ITelemetryService _telemetryService;
     private readonly ServiceOptions _serviceOptions;
     private readonly PlannerOptions _plannerOptions;
+    private readonly PromptsOptions _promptOptions;
     private readonly IDictionary<string, Plugin> _plugins;
 
     private const string ChatPluginName = nameof(ChatPlugin);
@@ -64,6 +69,7 @@ public class ChatController : ControllerBase, IDisposable
         ITelemetryService telemetryService,
         IOptions<ServiceOptions> serviceOptions,
         IOptions<PlannerOptions> plannerOptions,
+        IOptions<PromptsOptions> promptOptions,
         IDictionary<string, Plugin> plugins)
     {
         this._logger = logger;
@@ -72,6 +78,7 @@ public class ChatController : ControllerBase, IDisposable
         this._disposables = new List<IDisposable>();
         this._serviceOptions = serviceOptions.Value;
         this._plannerOptions = plannerOptions.Value;
+        this._promptOptions = promptOptions.Value;
         this._plugins = plugins;
     }
 
@@ -96,6 +103,7 @@ public class ChatController : ControllerBase, IDisposable
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     public async Task<IActionResult> ChatAsync(
         [FromServices] IKernel kernel,
+        [FromServices] IKernelMemory memoryClient,
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
         [FromServices] CopilotChatPlanner planner,
         [FromServices] ChatSessionRepository chatSessionRepository,
@@ -106,7 +114,7 @@ public class ChatController : ControllerBase, IDisposable
     {
         this._logger.LogDebug("Chat message received.");
 
-        return await this.HandleRequest(ChatFunctionName, kernel, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
+        return await this.HandleRequest(ChatFunctionName, kernel, memoryClient, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
     }
 
     /// <summary>
@@ -130,6 +138,7 @@ public class ChatController : ControllerBase, IDisposable
     [ProducesResponseType(StatusCodes.Status504GatewayTimeout)]
     public async Task<IActionResult> ProcessPlanAsync(
         [FromServices] IKernel kernel,
+        [FromServices] IKernelMemory memoryClient,
         [FromServices] IHubContext<MessageRelayHub> messageRelayHubContext,
         [FromServices] CopilotChatPlanner planner,
         [FromServices] ChatSessionRepository chatSessionRepository,
@@ -140,7 +149,7 @@ public class ChatController : ControllerBase, IDisposable
     {
         this._logger.LogDebug("plan request received.");
 
-        return await this.HandleRequest(ProcessPlanFunctionName, kernel, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
+        return await this.HandleRequest(ProcessPlanFunctionName, kernel, memoryClient, messageRelayHubContext, planner, chatSessionRepository, chatParticipantRepository, authInfo, ask, chatId.ToString());
     }
 
     /// <summary>
@@ -159,6 +168,7 @@ public class ChatController : ControllerBase, IDisposable
     private async Task<IActionResult> HandleRequest(
        string functionName,
        IKernel kernel,
+       IKernelMemory memoryClient,
        IHubContext<MessageRelayHub> messageRelayHubContext,
        CopilotChatPlanner planner,
        ChatSessionRepository chatSessionRepository,
@@ -184,7 +194,7 @@ public class ChatController : ControllerBase, IDisposable
 
         // Register plugins that have been enabled
         var openApiPluginAuthHeaders = this.GetPluginAuthHeaders(this.HttpContext.Request.Headers);
-        await this.RegisterPlannerFunctionsAsync(planner, openApiPluginAuthHeaders, contextVariables);
+        await this.RegisterPlannerFunctionsAsync(kernel, memoryClient, planner, authInfo, openApiPluginAuthHeaders, contextVariables, chatId);
 
         // Register hosted plugins that have been enabled
         await this.RegisterPlannerHostedFunctionsUsedAsync(planner, chat!.EnabledPlugins);
@@ -266,7 +276,7 @@ public class ChatController : ControllerBase, IDisposable
     /// <summary>
     /// Register functions with the planner's kernel.
     /// </summary>
-    private async Task RegisterPlannerFunctionsAsync(CopilotChatPlanner planner, Dictionary<string, string> authHeaders, ContextVariables variables)
+    private async Task RegisterPlannerFunctionsAsync(IKernel kernel, IKernelMemory memoryClient, CopilotChatPlanner planner, IAuthInfo authinfo, Dictionary<string, string> authHeaders, ContextVariables variables, string chatId)
     {
         // Register authenticated functions with the planner's kernel only if the request includes an auth header for the plugin.
 
@@ -301,10 +311,6 @@ public class ChatController : ControllerBase, IDisposable
                 });
         }
 
-        // middleware to add auth headers to state
-        // maybe create msgraph sdk client in state
-        // maintain user and group state in state
-
         // Microsoft Graph
         if (authHeaders.TryGetValue("GRAPH", out string? GraphAuthHeader))
         {
@@ -315,6 +321,21 @@ public class ChatController : ControllerBase, IDisposable
             planner.Kernel.ImportFunctions(new TaskListPlugin(new MicrosoftToDoConnector(graphServiceClient)), "todo");
             planner.Kernel.ImportFunctions(new CalendarPlugin(new OutlookCalendarConnector(graphServiceClient)), "calendar");
             planner.Kernel.ImportFunctions(new EmailPlugin(new OutlookMailConnector(graphServiceClient)), "email");
+            // planner.Kernel.ImportFunctions(new OrganizationHierarchyPlugin(new OrganizationHierarchyConnector(graphServiceClient)), "organization");
+            // planner.Kernel.ImportFunctions(new CloudDrivePlugin(new OneDriveConnector(graphServiceClient)), "onedrive");
+            // planner.Kernel.ImportFunctions(new DocumentPlugin(new KernelMemoryConnector(
+            //     kernel,
+            //     memoryClient,
+            //     new IUserInfo
+            //     {
+            //         UserId = authinfo.UserId,
+            //         ChatId = chatId,
+            //         GlobalDocumentId = Guid.Empty.ToString(),
+            //         Groups = authinfo.UserGroups?.ToArray() ?? Array.Empty<string>(),
+            //     },
+            //     this._promptOptions
+            //     )
+            // ), "document");
         }
 
         if (variables.TryGetValue("customPlugins", out string? customPluginsString))
@@ -426,7 +447,11 @@ public class ChatController : ControllerBase, IDisposable
         var contextVariables = new ContextVariables(ask.Input);
         foreach (var variable in ask.Variables)
         {
-            contextVariables.Set(variable.Key, variable.Value);
+            // contextVariables.Set(variable.Key, variable.Value);
+            if (!variable.Key.StartsWith("graph", StringComparison.OrdinalIgnoreCase))
+            {
+                contextVariables.Set(variable.Key, variable.Value);
+            }
         }
 
         contextVariables.Set(UserIdKey, authInfo.UserId);

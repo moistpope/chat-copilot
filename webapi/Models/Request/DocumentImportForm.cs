@@ -1,5 +1,6 @@
 ﻿// Copyright (c) Microsoft. All rights reserved.
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.AspNetCore.Http;
@@ -19,7 +20,7 @@ public class DocumentImportForm
     /// <summary>
     /// The scope IDs that have access to the document.
     /// </summary>
-    public IEnumerable<string> ScopeIds { get; set; } = Enumerable.Empty<string>();
+    public List<string> ScopeIds { get; set; } = new List<string>();
 
     /// <summary>
     /// Flag indicating whether user has content safety enabled from the client.
